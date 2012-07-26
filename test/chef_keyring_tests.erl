@@ -3,9 +3,9 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(SETUP, fun() ->
-                       application:set_env(chef_common, keyring,
+                       application:set_env(chef_authn, keyring,
                                            [{test1, "../test/testkey.pem"}]),
-                       application:set_env(chef_common, keyring_dir, "../test"),
+                       application:set_env(chef_authn, keyring_dir, "../test"),
                        chef_keyring:start_link() end).
 
 lookup_test_() ->
@@ -46,8 +46,8 @@ lookup_test_() ->
 load_file_test_() ->
     {setup,
      fun() ->
-             application:unset_env(chef_common, keyring),
-             application:unset_env(chef_common, keyring_dir),
+             application:unset_env(chef_authn, keyring),
+             application:unset_env(chef_authn, keyring_dir),
              chef_keyring:start_link(),
              {ok}
      end,
@@ -64,15 +64,15 @@ load_file_test_() ->
                end},
               {"Test key file reloading",
                fun() ->
-                       application:set_env(chef_common, keyring,
+                       application:set_env(chef_authn, keyring,
                                            [{test1, "../test/testkey.pem"}]),
 
-                       application:set_env(chef_common, keyring,
+                       application:set_env(chef_authn, keyring,
                                            [{test1, "../test/testkey.pem"}]),
                        {ok, Key1} = chef_keyring:get_key(test1),
                        ?assertEqual(element(1,Key1), 'RSAPrivateKey'),
 
-                       application:set_env(chef_common, keyring,
+                       application:set_env(chef_authn, keyring,
                                            [{test1, "../test/webui_pub.pem"}]),
 
                        chef_keyring:reload(),
@@ -87,9 +87,9 @@ load_file_test_() ->
 load_dir_test_() ->
     {setup,
      fun() ->
-             application:unset_env(chef_common, keyring),
-             application:unset_env(chef_common, keyring_file),
-             application:set_env(chef_common, keyring_dir, "../test"),
+             application:unset_env(chef_authn, keyring),
+             application:unset_env(chef_authn, keyring_file),
+             application:set_env(chef_authn, keyring_dir, "../test"),
              chef_keyring:start_link(),
              chef_keyring:reload(),
              {ok}
@@ -112,9 +112,9 @@ load_dir_test_() ->
 reload_changed_dir_test_() ->
     {setup,
      fun() ->
-             application:unset_env(chef_common, keyring),
-             application:unset_env(chef_common, keyring_file),
-             application:set_env(chef_common, keyring_dir, "../test"),
+             application:unset_env(chef_authn, keyring),
+             application:unset_env(chef_authn, keyring_file),
+             application:set_env(chef_authn, keyring_dir, "../test"),
              file:delete(?LINK),
              chef_keyring:start_link(),
              chef_keyring:reload(),
@@ -158,10 +158,10 @@ reload_changed_dir_test_() ->
 reload_changed_dir2_test_() ->
     {setup,
      fun() ->
-             application:unset_env(chef_common, keyring),
-             application:unset_env(chef_common, keyring_file),
-             application:unset_env(chef_common, keyring_dir),
-             application:set_env(chef_common, keyring,
+             application:unset_env(chef_authn, keyring),
+             application:unset_env(chef_authn, keyring_file),
+             application:unset_env(chef_authn, keyring_dir),
+             application:set_env(chef_authn, keyring,
                                  [{test1, "../test/testkey.pem"}]),
              file:delete(?LINK),
              chef_keyring:start_link(),

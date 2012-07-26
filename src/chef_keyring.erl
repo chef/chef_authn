@@ -2,9 +2,8 @@
 %% ex: ts=4 sw=4 et
 %% @author Kevin Smith <kevin@opscode.com>
 %% @author Mark Anderson <mark@opscode.com>
-% @copyright Copyright 2011 Opscode, Inc.
-% @version 0.0.2
-% @end
+%% @copyright Copyright 2011-2012 Opscode, Inc.
+%% @end
 -module(chef_keyring).
 
 -behaviour(gen_server).
@@ -40,10 +39,10 @@
 %%%
 %%% Keys use atoms for names
 %%%
-%%% * Environment variable chef_common:keyring_dir specifies a directory containing .pem
+%%% * Environment variable chef_authn:keyring_dir specifies a directory containing .pem
 %%%   files; the name is the basename of the the file as an atom
 %%%
-%%% * Environment variable chef_common:keyring is a list of {Name, Path} pairs, where Name
+%%% * Environment variable chef_authn:keyring is a list of {Name, Path} pairs, where Name
 %%%   is an atom, and Path is the path to a pem file
 %%%
 %%%===================================================================
@@ -74,7 +73,7 @@ init([]) ->
     try
         State = load(#state{}),
         %% TODO : Decide how and where we want to handle reloading of keys...
-        Interval = case application:get_env(chef_common, keyring_reload_interval) of
+        Interval = case application:get_env(chef_authn, keyring_reload_interval) of
                        undefined -> ?RELOAD_INTERVAL_MS;
                        {ok, I} -> I
                    end,
@@ -147,7 +146,7 @@ load(State) ->
                 last_updated = os:timestamp()}.
 
 load_keyring_from_env(OldKeys) ->
-    case application:get_env(chef_common, keyring) of
+    case application:get_env(chef_authn, keyring) of
         undefined -> OldKeys;
         {ok, KeyRing} when is_list(KeyRing) ->
             {ok, Keys} = load_keyring_files(KeyRing, OldKeys),
@@ -158,7 +157,7 @@ load_keyring_from_env(OldKeys) ->
     end.
 
 check_keyring_dir() ->
-    case application:get_env(chef_common, keyring_dir) of
+    case application:get_env(chef_authn, keyring_dir) of
         undefined -> {undef, erlang:universaltime()};
         {ok, Path} -> {Path, modtime(Path)}
     end.
