@@ -1,7 +1,7 @@
 {application, chef_authn,
  [
-  {description, "Opscode authn client"},
-  {vsn, "1.0"},
+  {description, "Erlang API request authentication signing and verification for Chef"},
+  {vsn, git},
   {registered, []},
   {applications, [kernel,
                   stdlib,
