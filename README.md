@@ -2,7 +2,7 @@
 
 This is the authentication layer for chef.
 
-Chef is a system integration framework written in erlang and designed to bring the benefits of configuration management to your entire infrastructure.
+Chef is a system integration framework written in erlang and ruby and designed to bring the benefits of configuration management to your entire infrastructure.
 
 The Chef Wiki is the definitive source of user documentation.
 
