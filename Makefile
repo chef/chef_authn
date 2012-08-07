@@ -21,3 +21,8 @@ eunit: compile
 	@rebar skip_deps=true eunit
 
 test: eunit
+
+doc:
+	@rebar doc skip_deps=true
+
+.PHONY: doc
