@@ -412,7 +412,10 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
         error:{badmatch, _} -> {no_authn, bad_sig}
     end.
 
--spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary() | decrypt_failed.
+-spec decrypt_sig(binary(), {cert, public_key_data()} |
+                            {key, public_key_data()} |
+                            public_key_data() |
+                            rsa_public_key()) -> binary() | decrypt_failed.
 decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
     try
         public_key:decrypt_public(base64:decode(Sig), PK)
@@ -422,8 +425,8 @@ decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
         error:decrypt_failed ->
             decrypt_failed
     end;
-decrypt_sig(Sig, KeyData)  when is_binary(KeyData) ->
-    PK = read_key_data(KeyData),
+decrypt_sig(Sig, KeyData) ->
+    PK = decode_key_data(KeyData),
     decrypt_sig(Sig, PK).
 
 sig_from_headers(GetHeader, I, Acc) ->
@@ -460,36 +463,50 @@ parse_signing_description(Desc) ->
     [ {Key, Value} ||
         [Key, Value] <- [ re:split(KV, "=") || KV <- re:split(Desc, ";") ] ].
 
--spec read_key_data(public_key_data()) -> rsa_public_key().
-%% Read in the public key. We handle either public/private keypairs
-%% wrapped in a self-signed Certificate or raw Public keys in either
-%% PKCS1 or SPKI format. The PKCS1 format is deprecated, but supported
-%% for read.
-read_key_data( <<"-----BEGIN CERTIFICATE", _Bin/binary>> = Data) ->
+-spec decode_key_data({cert, public_key_data()} |
+                      {key, public_key_data()} |
+                      public_key_data()) -> rsa_public_key().
+%% Decode a Base64 encoded public key which is either
+%% wrapped in a certificate or a public keys which can be in
+%% PKCS1 or SPKI format. The PKCS1 format is deprecated within Chef, but
+%% supported for read.
+%%
+%% For backwards compatibility we support the key_data to be provided through
+%% the API as a tagged tuple as well as a binary()
+decode_key_data({cert, Data}) ->
+    decode_cert(Data);
+decode_key_data({key, Data}) ->
+    decode_public_key(Data);
+decode_key_data(Data) when is_binary(Data) ->
+    decode_key_data({key_type(Data), Data}).
+
+-spec key_type(public_key_data()) -> cert | key.
+%% For a given Base64 encoded public key determine if it's wrapped in
+%% a certificate or is a raw public key.
+key_type( <<"-----BEGIN CERTIFICATE", _Bin/binary>>) ->
     %% Cert
-    read_cert(Data);
-read_key_data(<<"-----BEGIN PUBLIC KEY", _Bin/binary>> = Data) ->
+    cert;
+key_type(<<"-----BEGIN PUBLIC KEY", _Bin/binary>>) ->
     %% SPKI
-    read_public_key(Data);
-read_key_data(<<"-----BEGIN RSA PUBLIC KEY", _Bin/binary>> = Data) ->
+    key;
+key_type(<<"-----BEGIN RSA PUBLIC KEY", _Bin/binary>>) ->
     %% PKCS1
-    read_public_key(Data).
+    key.
 
-
--spec read_public_key(binary() |
+-spec decode_public_key(binary() |
                       {'RSAPublicKey', binary(), _} |
                       {'SubjectPublicKeyInfo', _, _}) -> rsa_public_key().
-read_public_key({'RSAPublicKey', Der, _}) ->
+decode_public_key({'RSAPublicKey', Der, _}) ->
     public_key:der_decode('RSAPublicKey', Der);
-read_public_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
+decode_public_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
     public_key:pem_entry_decode(PubEntry);
-read_public_key(Bin) when is_binary(Bin) ->
+decode_public_key(Bin) when is_binary(Bin) ->
     [Decode] = public_key:pem_decode(Bin),
-    read_public_key(Decode).
+    decode_public_key(Decode).
 
-
--spec read_cert(binary()) -> rsa_public_key().  %% der_decode only spec's term
-read_cert(Bin) ->
+-spec decode_cert(binary()) -> rsa_public_key().  %% der_decode only spec's term
+%% decode a Base64 encoded certificate and return the public key
+decode_cert(Bin) ->
     Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(Bin))),
     TbsCert = Cert#'Certificate'.tbsCertificate,
     Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
@@ -625,11 +642,29 @@ sign_request_1_1_test() ->
                        ?request_time_http, ?path, ?signing_algorithm, ?signing_version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
+key_type_cert_test() ->
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    ?assertEqual(cert, key_type(Public_key)).
+
+key_type_pk_test() ->
+    {ok, Public_key} = file:read_file("../test/platform_public_key_example.pem"),
+    ?assertEqual(key, key_type(Public_key)).
+
+key_type_spki_pk_test() ->
+    {ok, Public_key} = file:read_file("../test/spki_public.pem"),
+    ?assertEqual(key, key_type(Public_key)).
+
 decrypt_sig_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     ?assertEqual(?expected_sign_string,
                  decrypt_sig(AuthSig, Public_key)).
+
+decrypt_tagged_sig_test() ->
+    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    ?assertEqual(?expected_sign_string,
+                 decrypt_sig(AuthSig, {cert, Public_key})).
 
 decrypt_sig_fail_platform_style_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
@@ -829,24 +864,24 @@ parse_signing_description_1_1_test_() ->
     [ ?_assertEqual(Want, parse_signing_description(In))
       || {In, Want} <- Cases ].
 
-read_cert_test() ->
+decode_cert_test() ->
     {ok, Bin} = file:read_file("../test/example_cert.pem"),
-    Cert = read_cert(Bin),
+    Cert = decode_cert(Bin),
     ?assertEqual('RSAPublicKey', erlang:element(1, Cert)).
 
-read_public_key_platform_test() ->
+decode_public_key_platform_test() ->
     %% platform-style key
     {ok, Bin} = file:read_file("../test/platform_public_key_example.pem"),
-    PubKey = read_public_key(Bin),
+    PubKey = decode_public_key(Bin),
     Coded = public_key:encrypt_public(<<"open sesame">>, PubKey),
     ?assertEqual(true, is_binary(Coded)).
 
-read_public_key_spki_test() ->
+decode_public_key_spki_test() ->
     %% platform-style key
     {ok, Bin} = file:read_file("../test/spki_public.pem"),
     %% verify valid key, by encrypting something, will error if
     %% key is bad.
-    PubKey = read_public_key(Bin),
+    PubKey = decode_public_key(Bin),
     Coded = public_key:encrypt_public(<<"open sesame">>, PubKey),
     ?assertEqual(true, is_binary(Coded)).
 
