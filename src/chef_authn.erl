@@ -86,7 +86,8 @@
 -type signing_algorithm() :: binary().
 -type signing_version() :: binary().
 -type erlang_time() :: {calendar_date(), calendar_time()}.
--type public_key_data() :: <<_:64,_:_*8>>. %% binary()
+-type base64_binary() :: <<_:64,_:_*8>>.
+-type public_key_data() :: {cert, base64_binary()} | {key, base64_binary()} | base64_binary().
 -type header_fun() :: fun((header_name()) -> header_value()).
 -type time_skew() :: pos_integer().         % in seconds
 %% -type rsa_public_key() :: public_key:rsa_public_key().
@@ -412,10 +413,7 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
         error:{badmatch, _} -> {no_authn, bad_sig}
     end.
 
--spec decrypt_sig(binary(), {cert, public_key_data()} |
-                            {key, public_key_data()} |
-                            public_key_data() |
-                            rsa_public_key()) -> binary() | decrypt_failed.
+-spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary() | decrypt_failed.
 decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
     try
         public_key:decrypt_public(base64:decode(Sig), PK)
@@ -463,9 +461,7 @@ parse_signing_description(Desc) ->
     [ {Key, Value} ||
         [Key, Value] <- [ re:split(KV, "=") || KV <- re:split(Desc, ";") ] ].
 
--spec decode_key_data({cert, public_key_data()} |
-                      {key, public_key_data()} |
-                      public_key_data()) -> rsa_public_key().
+-spec decode_key_data(public_key_data()) -> rsa_public_key().
 %% Decode a Base64 encoded public key which is either
 %% wrapped in a certificate or a public keys which can be in
 %% PKCS1 or SPKI format. The PKCS1 format is deprecated within Chef, but
@@ -480,7 +476,7 @@ decode_key_data({key, Data}) ->
 decode_key_data(Data) when is_binary(Data) ->
     decode_key_data({key_type(Data), Data}).
 
--spec key_type(public_key_data()) -> cert | key.
+-spec key_type(base64_binary()) -> cert | key.
 %% For a given Base64 encoded public key determine if it's wrapped in
 %% a certificate or is a raw public key.
 key_type( <<"-----BEGIN CERTIFICATE", _Bin/binary>>) ->
