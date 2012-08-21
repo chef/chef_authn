@@ -86,7 +86,7 @@
 -type signing_algorithm() :: binary().
 -type signing_version() :: binary().
 -type erlang_time() :: {calendar_date(), calendar_time()}.
--type public_key_data() :: {cert, binary()} | {key, binary()}.
+-type public_key_data() :: <<_:64,_:_*8>>. %% binary()
 -type header_fun() :: fun((header_name()) -> header_value()).
 -type time_skew() :: pos_integer().         % in seconds
 %% -type rsa_public_key() :: public_key:rsa_public_key().
@@ -422,7 +422,7 @@ decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
         error:decrypt_failed ->
             decrypt_failed
     end;
-decrypt_sig(Sig, {Type, _} = KeyData)  when Type =:= cert orelse Type=:= key ->
+decrypt_sig(Sig, KeyData)  when is_binary(KeyData) ->
     PK = read_key_data(KeyData),
     decrypt_sig(Sig, PK).
 
@@ -461,9 +461,18 @@ parse_signing_description(Desc) ->
         [Key, Value] <- [ re:split(KV, "=") || KV <- re:split(Desc, ";") ] ].
 
 -spec read_key_data(public_key_data()) -> rsa_public_key().
-read_key_data({cert, Data}) when is_binary(Data) ->
+%% Read in the public key. We handle either public/private keypairs
+%% wrapped in a self-signed Certificate or raw Public keys in either
+%% PKCS1 or SPKI format. The PKCS1 format is deprecated, but supported
+%% for read.
+read_key_data( <<"-----BEGIN CERTIFICATE", _Bin/binary>> = Data) ->
+    %% Cert
     read_cert(Data);
-read_key_data({key, Data}) ->
+read_key_data(<<"-----BEGIN PUBLIC KEY", _Bin/binary>> = Data) ->
+    %% SPKI
+    read_public_key(Data);
+read_key_data(<<"-----BEGIN RSA PUBLIC KEY", _Bin/binary>> = Data) ->
+    %% PKCS1
     read_public_key(Data).
 
 
@@ -620,17 +629,17 @@ decrypt_sig_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     ?assertEqual(?expected_sign_string,
-                 decrypt_sig(AuthSig, {cert, Public_key})).
+                 decrypt_sig(AuthSig, Public_key)).
 
 decrypt_sig_fail_platform_style_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
-    {ok, Bin} = file:read_file("../test/platform_public_key_example.pem"),
-    ?assertEqual(decrypt_failed, decrypt_sig(AuthSig, {key, Bin})).
+    {ok, PublicKey} = file:read_file("../test/platform_public_key_example.pem"),
+    ?assertEqual(decrypt_failed, decrypt_sig(AuthSig, PublicKey)).
 
 decrypt_sig_fail_spki_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
-    {ok, Bin} = file:read_file("../test/spki_public.pem"),
-    ?assertEqual(decrypt_failed, decrypt_sig(AuthSig, {key, Bin})).
+    {ok, PublicKey} = file:read_file("../test/spki_public.pem"),
+    ?assertEqual(decrypt_failed, decrypt_sig(AuthSig, PublicKey)).
 
 time_in_bounds_test() ->
     T1 = {{2011,1,26},{2,3,0}},
@@ -661,8 +670,7 @@ make_skew_time() ->
 authenticate_user_request_test_() ->
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = extract_private_key(RawKey),
-    {ok, Public_key0} = file:read_file("../test/example_cert.pem"),
-    Public_key = {cert, Public_key0},
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     Headers = sign_request(Private_key, ?body, ?user, <<"post">>,
                            ?request_time_http, ?path),
     GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
@@ -715,7 +723,7 @@ authenticate_user_request_test_() ->
       fun() ->
               {ok, Other_key} = file:read_file("../test/other_cert.pem"),
               BadKey = authenticate_user_request(GetHeader, <<"post">>, ?path,
-                                                 ?body, {cert, Other_key},
+                                                 ?body, Other_key,
                                                  TimeSkew),
               ?assertEqual({no_authn, bad_sig}, BadKey)
       end
