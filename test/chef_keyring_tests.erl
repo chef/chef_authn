@@ -19,14 +19,22 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(SETUP, fun() ->
-                       application:set_env(chef_authn, keyring,
-                                           [{test1, "../test/testkey.pem"}]),
-                       application:set_env(chef_authn, keyring_dir, "../test"),
-                       chef_keyring:start_link() end).
+-define(LINK, "../test/reload_test.pem").
+
+unset_chef_authn_env() ->
+    application:unset_env(chef_authn, keyring),
+    application:unset_env(chef_authn, keyring_file),
+    application:unset_env(chef_authn, keyring_dir).
 
 lookup_test_() ->
-    {foreach, ?SETUP,
+    {foreach,
+     fun() ->
+             application:set_env(chef_authn, keyring,
+                                 [{test1, "../test/testkey.pem"}]),
+             application:set_env(chef_authn, keyring_dir, "../test"),
+             chef_keyring:start_link()
+     end,
+     fun(_) -> cleanup end,
      [{"Test private key fetch ",
        fun() ->
                {ok, Key} = chef_keyring:get_key(testkey),
@@ -63,144 +71,125 @@ lookup_test_() ->
 load_file_test_() ->
     {setup,
      fun() ->
-             application:unset_env(chef_authn, keyring),
-             application:unset_env(chef_authn, keyring_dir),
-             chef_keyring:start_link(),
-             {ok}
+             unset_chef_authn_env(),
+             chef_keyring:start_link()
      end,
      fun(_) -> ok
      end,
-     fun({ok}) ->
-             [
-              {"Test basic key file reading",
-               fun() ->
-                       {ok, Key1} = chef_keyring:get_key('clownco-org-admin'),
-                       ?assertEqual(element(1,Key1), 'RSAPrivateKey'),
-                       {ok, Key2} = chef_keyring:get_key('testkey'),
-                       ?assertEqual(element(1,Key2), 'RSAPrivateKey')
-               end},
-              {"Test key file reloading",
-               fun() ->
-                       application:set_env(chef_authn, keyring,
-                                           [{test1, "../test/testkey.pem"}]),
+     [
+      {"Test basic key file reading",
+       fun() ->
+               {ok, Key1} = chef_keyring:get_key('clownco-org-admin'),
+               ?assertEqual(element(1,Key1), 'RSAPrivateKey'),
+               {ok, Key2} = chef_keyring:get_key('testkey'),
+               ?assertEqual(element(1,Key2), 'RSAPrivateKey')
+       end},
+      {"Test key file reloading",
+       fun() ->
+               application:set_env(chef_authn, keyring,
+                                   [{test1, "../test/testkey.pem"}]),
 
-                       application:set_env(chef_authn, keyring,
-                                           [{test1, "../test/testkey.pem"}]),
-                       {ok, Key1} = chef_keyring:get_key(test1),
-                       ?assertEqual(element(1,Key1), 'RSAPrivateKey'),
+               application:set_env(chef_authn, keyring,
+                                   [{test1, "../test/testkey.pem"}]),
+               {ok, Key1} = chef_keyring:get_key(test1),
+               ?assertEqual(element(1,Key1), 'RSAPrivateKey'),
 
-                       application:set_env(chef_authn, keyring,
-                                           [{test1, "../test/webui_pub.pem"}]),
+               application:set_env(chef_authn, keyring,
+                                   [{test1, "../test/webui_pub.pem"}]),
 
-                       chef_keyring:reload(),
+               chef_keyring:reload(),
 
-                       {ok, Key2} = chef_keyring:get_key(test1),
-                       ?assertEqual(element(1,Key2), 'RSAPublicKey')
-               end}
-             ]
-     end
+               {ok, Key2} = chef_keyring:get_key(test1),
+               ?assertEqual(element(1,Key2), 'RSAPublicKey')
+       end}
+     ]
     }.
 
 load_dir_test_() ->
     {setup,
      fun() ->
-             application:unset_env(chef_authn, keyring),
-             application:unset_env(chef_authn, keyring_file),
+             unset_chef_authn_env(),
              application:set_env(chef_authn, keyring_dir, "../test"),
              chef_keyring:start_link(),
-             chef_keyring:reload(),
-             {ok}
+             chef_keyring:reload()
      end,
      fun(_) -> ok
      end,
-     fun({ok}) ->
-             [
-              {"Test basic key dir reading",
-               fun() ->
-                       {ok, Key1} = chef_keyring:get_key(testkey),
-                       ?assertEqual(element(1,Key1), 'RSAPrivateKey')
-               end}
-             ]
-     end
+     [
+      {"Test basic key dir reading",
+       fun() ->
+               {ok, Key1} = chef_keyring:get_key(testkey),
+               ?assertEqual(element(1,Key1), 'RSAPrivateKey')
+       end}
+     ]
     }.
-
--define(LINK, "../test/reload_test.pem").
 
 reload_changed_dir_test_() ->
     {setup,
      fun() ->
-             application:unset_env(chef_authn, keyring),
-             application:unset_env(chef_authn, keyring_file),
+             unset_chef_authn_env(),
              application:set_env(chef_authn, keyring_dir, "../test"),
              file:delete(?LINK),
              chef_keyring:start_link(),
-             chef_keyring:reload(),
-             {ok}
+             chef_keyring:reload()
      end,
      fun(_) ->
              file:delete(?LINK)
      end,
-     fun({ok}) ->
-             [
-              {"Test basic reloading of dir when adding file: " ?LINK,
-               fun() ->
-                       %% Check that key is unknown in initial state
-                       Stats1 = chef_keyring:stats(),
-                       Result1 = chef_keyring:get_key('reload_test'),
-                       ?assertEqual({error, unknown_key}, Result1),
+     [
+      {"Test basic reloading of dir when adding file: " ?LINK,
+       fun() ->
+               %% Check that key is unknown in initial state
+               Stats1 = chef_keyring:stats(),
+               Result1 = chef_keyring:get_key('reload_test'),
+               ?assertEqual({error, unknown_key}, Result1),
 
-                       %% Trigger a reload and verify nothing has changed
-                       timer:sleep(1000), %% I'm ashamed, but directory times are second resolution
-                       chef_keyring:reload_if_changed(),
-                       Stats2 = chef_keyring:stats(),
-                       ?assertEqual(Stats1, Stats2),
+               %% Trigger a reload and verify nothing has changed
+               timer:sleep(1000), %% I'm ashamed, but directory times are second resolution
+               chef_keyring:reload_if_changed(),
+               Stats2 = chef_keyring:stats(),
+               ?assertEqual(Stats1, Stats2),
 
-                       Result2 = chef_keyring:get_key('reload_test'),
-                       ?assertEqual({error, unknown_key}, Result2),
+               Result2 = chef_keyring:get_key('reload_test'),
+               ?assertEqual({error, unknown_key}, Result2),
 
-                       %% Add a new key, trigger a reload, and verify things have changed.
-                       file:make_symlink("../test/testkey.pem", ?LINK),
-                       timer:sleep(1000), %% I'm ashamed, but directory times are second resolution
-                       chef_keyring:reload_if_changed(),
-                       Stats3 = chef_keyring:stats(),
-                       ?assert(Stats1 =/= Stats3),
+               %% Add a new key, trigger a reload, and verify things have changed.
+               file:make_symlink("../test/testkey.pem", ?LINK),
+               timer:sleep(1000), %% I'm ashamed, but directory times are second resolution
+               chef_keyring:reload_if_changed(),
+               Stats3 = chef_keyring:stats(),
+               ?assert(Stats1 =/= Stats3),
 
-                       {Result3, _} = chef_keyring:get_key('reload_test'),
-                       ?assertEqual(Result3, 'ok')
-               end}
-             ]
-     end
+               {Result3, _} = chef_keyring:get_key('reload_test'),
+               ?assertEqual(Result3, 'ok')
+       end}
+     ]
     }.
 
 reload_changed_dir2_test_() ->
     {setup,
      fun() ->
-             application:unset_env(chef_authn, keyring),
-             application:unset_env(chef_authn, keyring_file),
-             application:unset_env(chef_authn, keyring_dir),
+             unset_chef_authn_env(),
              application:set_env(chef_authn, keyring,
                                  [{test1, "../test/testkey.pem"}]),
              file:delete(?LINK),
              chef_keyring:start_link(),
-             chef_keyring:reload(),
-             {ok}
+             chef_keyring:reload()
      end,
      fun(_) ->
              file:delete(?LINK)
      end,
-     fun({ok}) ->
-             [
-              {"Test basic reloading when no dir: " ?LINK,
-               fun() ->
-                       %% Check that key is unknown in initial state
-                       Stats1 = chef_keyring:stats(),
+     [
+      {"Test basic reloading when no dir: " ?LINK,
+       fun() ->
+               %% Check that key is unknown in initial state
+               Stats1 = chef_keyring:stats(),
 
-                       %% Trigger a reload and verify nothing has changed
-                       timer:sleep(1000), %% I'm ashamed, but directory times are second resolution
-                       chef_keyring:reload_if_changed(),
-                       Stats2 = chef_keyring:stats(),
-                       ?assertEqual(Stats1, Stats2)
-               end}
-             ]
-     end
+               %% Trigger a reload and verify nothing has changed
+               timer:sleep(1000), %% I'm ashamed, but directory times are second resolution
+               chef_keyring:reload_if_changed(),
+               Stats2 = chef_keyring:stats(),
+               ?assertEqual(Stats1, Stats2)
+       end}
+     ]
     }.
