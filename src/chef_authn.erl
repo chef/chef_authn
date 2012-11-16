@@ -2,6 +2,7 @@
 %% ex: ts=4 sw=4 et
 %% @author Seth Falcon <seth@opscode.com>
 %% @author Christopher Brown <cb@opscode.com>
+%% @copyright 2011 Opscode, Inc.
 %% @doc chef_authn - Request signing and authentication for Opscode Chef
 %%
 %% This module is an Erlang port of the mixlib-authentication Ruby gem.
@@ -27,88 +28,87 @@
 
 
 -module(chef_authn).
+-include("chef_authn.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
 
+-ifdef(TEST).
+-compile(export_all).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -define(buf_size, 16384).
 
--define(signing_algorithm, <<"sha1">>).
-
--define(signing_version, <<"1.1">>).
-
--define(signing_version_v1_0, <<"1.0">>).
-
--define(signing_versions, [?signing_version_v1_0, ?signing_version]).
-
--define(signing_version_key, <<"version">>).
-
--define(signing_algorithm_key, <<"algorithm">>).
-
--define(version1_sig_format, <<"Method:~s\nHashed Path:~s\n"
-                               "X-Ops-Content-Hash:~s\n"
-                               "X-Ops-Timestamp:~s\nX-Ops-UserId:~ts">>).
-
--define(required_headers, [<<"X-Ops-UserId">>,
-                           <<"X-Ops-Timestamp">>,
-                           <<"X-Ops-Sign">>,
-                           % FIXME: mixlib-authorization requires host, but
-                           % it is not used as part of the signing protocol AFAICT
-                           % <<"host">>,
-                           <<"X-Ops-Content-Hash">>]).
-
 -export([
+         sign_request/5,
+         sign_request/6,
+         sign_request/8,
          extract_public_or_private_key/1,
          extract_private_key/1,
          hash_string/1,
          hash_file/1,
-         sign_request/5,
-         sign_request/6,
-         sign_request/8,
          authenticate_user_request/6,
          validate_headers/2
          ]).
-
--include_lib("public_key/include/public_key.hrl").
-
--type calendar_time() :: { non_neg_integer(),  non_neg_integer(),  non_neg_integer() }.
--type calendar_date() :: { integer(),  1..12, 1..31 }.
-
--type header_name() :: binary().
--type header_value() :: binary() | 'undefined'.
--type get_header_fun() :: fun((header_name()) -> header_value()).
--type http_body() :: binary() | pid().
--type user_id() :: binary().
--type http_method() :: binary().
--type http_time() :: binary().
--type iso8601_time() :: binary().
--type http_path() :: binary().
--type sha_hash64() :: binary().
--type signing_algorithm() :: binary().
--type signing_version() :: binary().
--type erlang_time() :: {calendar_date(), calendar_time()}.
--type base64_binary() :: <<_:64,_:_*8>>.
--type public_key_data() :: {cert, base64_binary()} | {key, base64_binary()} | base64_binary().
--type header_fun() :: fun((header_name()) -> header_value()).
--type time_skew() :: pos_integer().         % in seconds
-%% -type rsa_public_key() :: public_key:rsa_public_key().
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--spec process_key( {'RSAPublicKey', binary(), _} |
-                   {'SubjectPublicKeyInfo', _, _}) ->
-                         rsa_public_key() | rsa_private_key() | {error, bad_key}.
-process_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
-    public_key:pem_entry_decode(PubEntry);
-process_key({'RSAPublicKey', Der, _}) ->
-    public_key:der_decode('RSAPublicKey', Der);
-process_key({Type, Der, _}) ->
-    public_key:der_decode(Type, Der).
-%process_key(_) ->
-%    {error, bad_key}.
+
+-include_lib("public_key/include/public_key.hrl").
+
+
+-spec sign_request(rsa_private_key(), user_id(), http_method(),
+                   erlang_time(), http_path()) ->
+      [{binary(), binary()}, ...].
+%% @doc Sign an HTTP request without a body (primarily GET)
+%% === Arguments ===
+%% <ul>
+%% <li> `PrivateKey': an rsa_private_key record (as defined in the public_key
+%%       module. {@link chef_authn:extract_public_or_private_key/1} can create
+%%       this record from a binary. </li>
+%% <li> `User': Chef User or Client name, as a binary. </li>
+%% <li> `Method': HTTP Method (e.g., GET, PUT, POST, DELETE) as a binary. </li>
+%% <li> `Time': The timestamp to include with the request signature, in
+%%      the format given by `calendar:universal_time()' </li>
+%% <li> `Path': full path to the resource, including protocol and host. </li>
+%% </ul>
+sign_request(PrivateKey, User, Method, Time, Path) ->
+    sign_request(PrivateKey, <<"">>, User, Method, Time, Path, ?signing_algorithm, ?signing_version).
+
+%% @doc Sign an HTTP request with a body (PUT/POST)
+-spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
+                   erlang_time(), http_path()) ->
+    [{binary(), binary()}, ...].
+
+sign_request(PrivateKey, Body, User, Method, Time, Path) ->
+    sign_request(PrivateKey, Body, User, Method, Time, Path, ?signing_algorithm, ?signing_version).
+
+%% @doc Sign an HTTP request so it can be sent to a Chef server.
+%%
+%% Returns a list of header tuples that should be included in the
+%% final HTTP request.
+%%
+-spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
+                   erlang_time(), http_path(), signing_algorithm(), signing_version()) ->
+    [{binary(), binary()}, ...].
+sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
+    CTime = time_iso8601(Time),
+    HashedBody = hashed_body(Body),
+    SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
+    Sig = base64:encode(public_key:encrypt_private(SignThis, PrivateKey)),
+    X_Ops_Sign = iolist_to_binary(io_lib:format("version=~s", [SignVersion])),
+    [{<<"X-Ops-Content-Hash">>, HashedBody},
+     {<<"X-Ops-UserId">>, User},
+     {<<"X-Ops-Sign">>, X_Ops_Sign},
+     {<<"X-Ops-Timestamp">>, CTime}]
+       ++ sig_header_items(Sig).
 
 -spec extract_public_or_private_key(binary()) -> term() | {error, bad_key}.
+%% @doc Accepts a public or private key in PEM format and returns a RSA public
+%% or private key record as appropriate. See documentation for the public_key
+%% module for more information about these data types.
 extract_public_or_private_key(RawKey) ->
     try public_key:pem_decode(RawKey) of
         [Key] -> process_key(Key)
@@ -125,6 +125,18 @@ extract_private_key(RawKey) ->
         _ ->
             {error, bad_key}
     end.
+
+-spec process_key( {'RSAPublicKey', binary(), _} |
+                   {'SubjectPublicKeyInfo', _, _}) ->
+                         rsa_public_key() | rsa_private_key() | {error, bad_key}.
+process_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
+    public_key:pem_entry_decode(PubEntry);
+process_key({'RSAPublicKey', Der, _}) ->
+    public_key:der_decode('RSAPublicKey', Der);
+process_key({Type, Der, _}) ->
+    public_key:der_decode(Type, Der).
+%process_key(_) ->
+%    {error, bad_key}.
 
 -spec(hash_string(string()|binary()) -> sha_hash64()).
 %% @doc Base 64 encoded SHA1 of `Str'
@@ -233,39 +245,6 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
                                             Time,
                                             CanonicalUserId])).
 
--spec sign_request(rsa_private_key(), user_id(), http_method(),
-                   http_time(), http_path()) ->
-      [{binary(), binary()}, ...].
-%% @doc Sign an HTTP request without a body (primarily GET)
-sign_request(PrivateKey, User, Method, Time, Path) ->
-    sign_request(PrivateKey, <<"">>, User, Method, Time, Path, ?signing_algorithm, ?signing_version).
-
--spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   http_time(), http_path()) ->
-    [{binary(), binary()}, ...].
-
-sign_request(PrivateKey, Body, User, Method, Time, Path) ->
-    sign_request(PrivateKey, Body, User, Method, Time, Path, ?signing_algorithm, ?signing_version).
-
-%% @doc Sign an HTTP request so it can be sent to a Chef server.
-%%
-%% Returns a list of header tuples that should be included in the
-%% final HTTP request.
-%%
--spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   http_time(), http_path(), signing_algorithm(), signing_version()) ->
-    [{binary(), binary()}, ...].
-sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
-    CTime = canonical_time(Time),
-    HashedBody = hashed_body(Body),
-    SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
-    Sig = base64:encode(public_key:encrypt_private(SignThis, PrivateKey)),
-    X_Ops_Sign = iolist_to_binary(io_lib:format("version=~s", [SignVersion])),
-    [{<<"X-Ops-Content-Hash">>, HashedBody},
-     {<<"X-Ops-UserId">>, User},
-     {<<"X-Ops-Sign">>, X_Ops_Sign},
-     {<<"X-Ops-Timestamp">>, CTime}]
-       ++ sig_header_items(Sig).
 
 %% @doc Generate X-Ops-Authorization-I for use in building auth headers
 -spec xops_header(non_neg_integer()) -> header_name().
@@ -509,376 +488,3 @@ decode_cert(Bin) ->
     {0, KeyDer} = Spki#'SubjectPublicKeyInfo'.subjectPublicKey,
     public_key:der_decode('RSAPublicKey', KeyDer).
 
--ifdef(TEST).
-
--define(path, <<"/organizations/clownco">>).
--define(path_with_query, <<"/organizations/clownco?a=1&b=2">>).
--define(hashed_path, <<"YtBWDn1blGGuFIuKksdwXzHU9oE=">>).
-
--define(body, <<"Spec Body">>).
--define(hashed_body, <<"DFteJZPVv6WKdQmMqZUQUumUyRs=">>).
--define(request_time_http, <<"Thu, 01 Jan 2009 12:00:00 GMT">>).
--define(request_time_iso8601, <<"2009-01-01T12:00:00Z">>).
--define(user, <<"spec-user">>).
-
--define(X_OPS_AUTHORIZATION_LINES_V1_0,
-        [
-         <<"jVHrNniWzpbez/eGWjFnO6lINRIuKOg40ZTIQudcFe47Z9e/HvrszfVXlKG4">>,
-         <<"NMzYZgyooSvU85qkIUmKuCqgG2AIlvYa2Q/2ctrMhoaHhLOCWWoqYNMaEqPc">>,
-         <<"3tKHE+CfvP+WuPdWk4jv4wpIkAz6ZLxToxcGhXmZbXpk56YTmqgBW2cbbw4O">>,
-         <<"IWPZDHSiPcw//AYNgW1CCDptt+UFuaFYbtqZegcBd2n/jzcWODA7zL4KWEUy">>,
-         <<"9q4rlh/+1tBReg60QdsmDRsw/cdO1GZrKtuCwbuD4+nbRdVBKv72rqHX9cu0">>,
-         <<"utju9jzczCyB+sSAQWrxSsXB/b8vV2qs0l4VD2ML+w==">>
-        ]).
-
--define(X_OPS_AUTHORIZATION_LINES,
-        [
-         <<"UfZD9dRz6rFu6LbP5Mo1oNHcWYxpNIcUfFCffJS1FQa0GtfU/vkt3/O5HuCM">>,
-         <<"1wIFl/U0f5faH9EWpXWY5NwKR031Myxcabw4t4ZLO69CIh/3qx1XnjcZvt2w">>,
-         <<"c2R9bx/43IWA/r8w8Q6decuu0f6ZlNheJeJhaYPI8piX/aH+uHBH8zTACZu8">>,
-         <<"vMnl5MF3/OIlsZc8cemq6eKYstp8a8KYq9OmkB5IXIX6qVMJHA6fRvQEB/7j">>,
-         <<"281Q7oI/O+lE8AmVyBbwruPb7Mp6s4839eYiOdjbDwFjYtbS3XgAjrHlaD7W">>,
-         <<"FDlbAG7H8Dmvo+wBxmtNkszhzbBnEYtuwQqT8nM/8A==">>
-        ]).
-
--define(X_OPS_CONTENT_HASH, <<"DFteJZPVv6WKdQmMqZUQUumUyRs=">>).
-
--define(expected_sign_string_v10,
-        iolist_to_binary(io_lib:format(
-                           "Method:~s\nHashed Path:~s\n"
-                           "X-Ops-Content-Hash:~s\n"
-                           "X-Ops-Timestamp:~s\n"
-                           "X-Ops-UserId:~s",
-                           ["POST", ?hashed_path, ?hashed_body,
-                            ?request_time_iso8601, ?user]))).
-
--define(expected_sign_string,
-        iolist_to_binary(io_lib:format(
-                           "Method:~s\nHashed Path:~s\n"
-                           "X-Ops-Content-Hash:~s\n"
-                           "X-Ops-Timestamp:~s\n"
-                           "X-Ops-UserId:~s",
-                           ["POST", ?hashed_path, ?hashed_body,
-                            ?request_time_iso8601, hash_string(?user)]))).
-
-hashed_path_test() ->
-    ?assertEqual(?hashed_path, hash_string(canonical_path(?path))).
-
-hashed_path_query_params_are_ignored_test() ->
-    %% for X-Ops_sign: version=1.0, query params are not included in
-    %% the hash of the path for request verification.
-    ?assertEqual(?hashed_path, hash_string(canonical_path(?path_with_query))).
-
-hashed_body_test() ->
-    ?assertEqual(?hashed_body, hashed_body(?body)).
-
-canonical_time_test() ->
-    % This date format comes from Ruby's default printing,
-    % but doesn't correspond to the HTTP rfc2616 format
-    % Time = "Thu Jan 01 12:00:00 -0000 2009",
-    ?assertEqual(?request_time_iso8601, canonical_time(?request_time_http)).
-
-canonicalize_request_v1_0_test() ->
-    Val1 = canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601, ?path, ?signing_algorithm, ?signing_version_v1_0),
-    ?assertEqual(?expected_sign_string_v10, Val1),
-
-    % verify normalization
-    Val2 = canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601,
-                                <<"/organizations//clownco/">>, ?signing_algorithm, ?signing_version_v1_0),
-    ?assertEqual(?expected_sign_string_v10, Val2).
-
-canonicalize_request_test() ->
-    Val1 = canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601, ?path, ?signing_algorithm, ?signing_version),
-    ?assertEqual(?expected_sign_string, Val1),
-
-    % verify normalization
-    Val2 = canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601,
-                                <<"/organizations//clownco/">>, ?signing_algorithm, ?signing_version),
-    ?assertEqual(?expected_sign_string, Val2).
-
-sign_request_1_0_test() ->
-    {ok, RawKey} = file:read_file("../test/private_key"),
-    Private_key = extract_private_key(RawKey),
-    AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_0) end,
-    EXPECTED_SIGN_RESULT =
-        [
-         {<<"X-Ops-Content-Hash">>, ?X_OPS_CONTENT_HASH},
-         {<<"X-Ops-UserId">>, ?user},
-         {<<"X-Ops-Sign">>, <<"version=1.0">>},
-         {<<"X-Ops-Timestamp">>, ?request_time_iso8601},
-         {<<"X-Ops-Authorization-1">>, AuthLine(1)},
-         {<<"X-Ops-Authorization-2">>, AuthLine(2)},
-         {<<"X-Ops-Authorization-3">>, AuthLine(3)},
-         {<<"X-Ops-Authorization-4">>, AuthLine(4)},
-         {<<"X-Ops-Authorization-5">>, AuthLine(5)},
-         {<<"X-Ops-Authorization-6">>, AuthLine(6)}
-        ],
-    Sig = sign_request(Private_key, ?body, ?user, <<"post">>,
-                       ?request_time_http, ?path, ?signing_algorithm, ?signing_version_v1_0),
-    ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
-
-sign_request_1_1_test() ->
-    {ok, RawKey} = file:read_file("../test/private_key"),
-    Private_key = extract_private_key(RawKey),
-    AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES) end,
-    EXPECTED_SIGN_RESULT =
-        [
-         {<<"X-Ops-Content-Hash">>, ?X_OPS_CONTENT_HASH},
-         {<<"X-Ops-UserId">>, ?user},
-         {<<"X-Ops-Sign">>, <<"version=1.1">>},
-         {<<"X-Ops-Timestamp">>, ?request_time_iso8601},
-         {<<"X-Ops-Authorization-1">>, AuthLine(1)},
-         {<<"X-Ops-Authorization-2">>, AuthLine(2)},
-         {<<"X-Ops-Authorization-3">>, AuthLine(3)},
-         {<<"X-Ops-Authorization-4">>, AuthLine(4)},
-         {<<"X-Ops-Authorization-5">>, AuthLine(5)},
-         {<<"X-Ops-Authorization-6">>, AuthLine(6)}
-        ],
-    Sig = sign_request(Private_key, ?body, ?user, <<"post">>,
-                       ?request_time_http, ?path, ?signing_algorithm, ?signing_version),
-    ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
-
-key_type_cert_test() ->
-    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    ?assertEqual(cert, key_type(Public_key)).
-
-key_type_pk_test() ->
-    {ok, Public_key} = file:read_file("../test/platform_public_key_example.pem"),
-    ?assertEqual(key, key_type(Public_key)).
-
-key_type_spki_pk_test() ->
-    {ok, Public_key} = file:read_file("../test/spki_public.pem"),
-    ?assertEqual(key, key_type(Public_key)).
-
-decrypt_sig_test() ->
-    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
-    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    ?assertEqual(?expected_sign_string,
-                 decrypt_sig(AuthSig, Public_key)).
-
-decrypt_tagged_sig_test() ->
-    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
-    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    ?assertEqual(?expected_sign_string,
-                 decrypt_sig(AuthSig, {cert, Public_key})).
-
-decrypt_sig_fail_platform_style_test() ->
-    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
-    {ok, PublicKey} = file:read_file("../test/platform_public_key_example.pem"),
-    ?assertEqual(decrypt_failed, decrypt_sig(AuthSig, PublicKey)).
-
-decrypt_sig_fail_spki_test() ->
-    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
-    {ok, PublicKey} = file:read_file("../test/spki_public.pem"),
-    ?assertEqual(decrypt_failed, decrypt_sig(AuthSig, PublicKey)).
-
-time_in_bounds_test() ->
-    T1 = {{2011,1,26},{2,3,0}},
-
-    % test seconds
-    T2 = {{2011,1,26},{2,3,4}},
-    ?assertEqual(false, time_in_bounds(T1, T2, 2)),
-    ?assertEqual(true, time_in_bounds(T1, T2, 5)),
-
-    % test minutes
-    T3 = {{2011,1,26},{2,6,0}},
-    ?assertEqual(false, time_in_bounds(T1, T3, 60*2)),
-    ?assertEqual(true, time_in_bounds(T1, T3, 60*5)),
-
-    % test hours
-    T4 = {{2011,1,26},{4,0,0}},
-    ?assertEqual(false, time_in_bounds(T1, T4, 60*60)),
-    ?assertEqual(true, time_in_bounds(T1, T4, 60*60*3)).
-
-make_skew_time() ->
-    % force time skew to allow for now
-    ReqTimeEpoch = calendar:datetime_to_gregorian_seconds(
-                     time_iso8601_to_date_time(?request_time_iso8601)),
-    NowEpoch = calendar:datetime_to_gregorian_seconds(
-                 calendar:now_to_universal_time(os:timestamp())),
-    (NowEpoch - ReqTimeEpoch) + 100.
-
-authenticate_user_request_test_() ->
-    {ok, RawKey} = file:read_file("../test/private_key"),
-    Private_key = extract_private_key(RawKey),
-    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    Headers = sign_request(Private_key, ?body, ?user, <<"post">>,
-                           ?request_time_http, ?path),
-    GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
-    % force time skew to allow a request to be processed 'now'
-    TimeSkew = make_skew_time(),
-
-    [
-     {"authenticated user request",
-      fun() ->
-              Ok = authenticate_user_request(GetHeader, <<"post">>, ?path, ?body,
-                                             Public_key, TimeSkew),
-              ?assertEqual({name, ?user}, Ok)
-      end
-     },
-
-     {"no_authn: bad path",
-      fun() ->
-              BadPath = authenticate_user_request(GetHeader, <<"post">>,
-                                                  <<"/organizations/foo">>,
-                                                  ?body, Public_key, TimeSkew),
-              ?assertEqual({no_authn, bad_sig}, BadPath)
-      end
-     },
-
-     {"no_authn: bad method",
-      fun() ->
-              BadMethod = authenticate_user_request(GetHeader, <<"PUT">>, ?path,
-                                                    ?body, Public_key, TimeSkew),
-              ?assertEqual({no_authn, bad_sig}, BadMethod)
-      end
-     },
-
-     {"no_authn: bad body",
-      fun() ->
-              BadBody = authenticate_user_request(GetHeader, <<"post">>, ?path,
-                                                  <<"xyz">>, Public_key, TimeSkew),
-              ?assertEqual({no_authn, bad_sig}, BadBody)
-      end
-     },
-
-     {"no_authn: bad time",
-      fun() ->
-              BadTime = authenticate_user_request(GetHeader, <<"post">>, ?path,
-                                                  ?body, Public_key, 600),
-              ?assertEqual({no_authn, bad_clock}, BadTime)
-      end
-      },
-
-     {"no_authn: bad key",
-      fun() ->
-              {ok, Other_key} = file:read_file("../test/other_cert.pem"),
-              BadKey = authenticate_user_request(GetHeader, <<"post">>, ?path,
-                                                 ?body, Other_key,
-                                                 TimeSkew),
-              ?assertEqual({no_authn, bad_sig}, BadKey)
-      end
-      },
-
-     {"no_authn: missing timestamp header",
-      fun() ->
-              Headers2 = proplists:delete(<<"X-Ops-Timestamp">>, Headers),
-              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
-              ?assertEqual({no_authn, {missing_headers, [<<"X-Ops-Timestamp">>]}},
-                           authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
-      end
-     },
-
-     {"no_authn: missing user header",
-      fun() ->
-              Headers2 = proplists:delete(<<"X-Ops-UserId">>, Headers),
-              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
-              ?assertEqual({no_authn, {missing_headers, [<<"X-Ops-UserId">>]}},
-                           authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
-      end
-     },
-
-     {"no_authn: missing all authorization-i headers",
-      fun() ->
-              Headers2 = lists:filter(
-                           fun({<<"X-Ops-Authorization-", _/binary>>, _}) -> false;
-                              (_Else) -> true
-                           end, Headers),
-              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
-              ?assertEqual({no_authn, bad_sig},
-                           authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
-      end
-     },
-
-     {"no_authn: missing one authorization-i header",
-      fun() ->
-              Headers2 = lists:filter(
-                           fun({<<"X-Ops-Authorization-5", _/binary>>, _}) -> false;
-                              (_Else) -> true
-                           end, Headers),
-              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
-              ?assertEqual({no_authn, bad_sig},
-                           authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
-      end
-     },
-
-     {"no_authn: mismatched signing description",
-      fun() ->
-              Headers2 = lists:keyreplace(<<"X-Ops-Sign">>, 1, Headers,
-                                          {<<"X-Ops-Sign">>, <<"version=2.0">>}),
-              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
-              ?assertEqual({no_authn, bad_sign_desc},
-                           authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
-      end
-     },
-
-     {"no_authn: missing signing description",
-      fun() ->
-              Headers2 = lists:keydelete(<<"X-Ops-Sign">>, 1, Headers),
-              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
-              ?assertEqual({no_authn, {missing_headers, [<<"X-Ops-Sign">>]}},
-                            authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                      ?body, Public_key, TimeSkew))
-      end
-     }
-     ].
-
-validate_headers_test_() ->
-    {ok, RawKey} = file:read_file("../test/private_key"),
-    Private_key = extract_private_key(RawKey),
-    Headers = sign_request(Private_key, ?body, ?user, <<"post">>,
-                           httpd_util:rfc1123_date(), ?path),
-    GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
-    MissingOneTests =
-        [ fun() ->
-                  Headers2 = proplists:delete(H, Headers),
-                  GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
-                  ?assertThrow({missing_headers, [H]}, validate_headers(GetHeader2, 10))
-          end || H <- ?required_headers ],
-    [{algorithm, _SignAlgorithm}, {version, SignVersion}] = validate_headers(GetHeader, 10),
-    [?_assertEqual(lists:member(SignVersion, ?signing_versions), true),
-     ?_assertThrow({missing_headers, ?required_headers},
-                   validate_headers(fun(<<_X/binary>>) -> undefined end, 1)) ]
-        ++ MissingOneTests.
-
-parse_signing_description_1_0_test_() ->
-    Cases = [{<<"version=1.0">>, [{<<"version">>, <<"1.0">>}]},
-             {undefined, []},
-             {<<"a=1;b=2">>, [{<<"a">>, <<"1">>}, {<<"b">>, <<"2">>}]}],
-    [ ?_assertEqual(Want, parse_signing_description(In))
-      || {In, Want} <- Cases ].
-
-parse_signing_description_1_1_test_() ->
-    Cases = [{<<"version=1.1">>, [{<<"version">>, <<"1.1">>}]},
-             {undefined, []},
-             {<<"a=1;b=2">>, [{<<"a">>, <<"1">>}, {<<"b">>, <<"2">>}]}],
-    [ ?_assertEqual(Want, parse_signing_description(In))
-      || {In, Want} <- Cases ].
-
-decode_cert_test() ->
-    {ok, Bin} = file:read_file("../test/example_cert.pem"),
-    Cert = decode_cert(Bin),
-    ?assertEqual('RSAPublicKey', erlang:element(1, Cert)).
-
-decode_public_key_platform_test() ->
-    %% platform-style key
-    {ok, Bin} = file:read_file("../test/platform_public_key_example.pem"),
-    PubKey = decode_public_key(Bin),
-    Coded = public_key:encrypt_public(<<"open sesame">>, PubKey),
-    ?assertEqual(true, is_binary(Coded)).
-
-decode_public_key_spki_test() ->
-    %% platform-style key
-    {ok, Bin} = file:read_file("../test/spki_public.pem"),
-    %% verify valid key, by encrypting something, will error if
-    %% key is bad.
-    PubKey = decode_public_key(Bin),
-    Coded = public_key:encrypt_public(<<"open sesame">>, PubKey),
-    ?assertEqual(true, is_binary(Coded)).
-
--endif.
