@@ -219,14 +219,14 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
                                             CanonicalUserId])).
 
 -spec sign_request(rsa_private_key(), user_id(), http_method(),
-                   http_time(), http_path()) ->
+                   erlang_time(), http_path()) ->
       [{binary(), binary()}, ...].
 %% @doc Sign an HTTP request without a body (primarily GET)
 sign_request(PrivateKey, User, Method, Time, Path) ->
     sign_request(PrivateKey, <<"">>, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
 -spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   http_time(), http_path()) ->
+                   erlang_time(), http_path()) ->
     [{binary(), binary()}, ...].
 
 sign_request(PrivateKey, Body, User, Method, Time, Path) ->
@@ -238,10 +238,10 @@ sign_request(PrivateKey, Body, User, Method, Time, Path) ->
 %% final HTTP request.
 %%
 -spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   http_time(), http_path(), signing_algorithm(), signing_version()) ->
+                   erlang_time(), http_path(), signing_algorithm(), signing_version()) ->
     [{binary(), binary()}, ...].
 sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
-    CTime = chef_time_utils:canonical_time(Time),
+    CTime = chef_time_utils:time_iso8601(Time),
     HashedBody = hashed_body(Body),
     SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
     Sig = base64:encode(public_key:encrypt_private(SignThis, PrivateKey)),

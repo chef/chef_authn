@@ -17,6 +17,7 @@
 -define(hashed_body, <<"DFteJZPVv6WKdQmMqZUQUumUyRs=">>).
 -define(request_time_http, <<"Thu, 01 Jan 2009 12:00:00 GMT">>).
 -define(request_time_iso8601, <<"2009-01-01T12:00:00Z">>).
+-define(request_time_erlang, {{2009, 1, 1}, {12, 0, 0}}).
 -define(user, <<"spec-user">>).
 
 %% These are copied from chef_authn.erl since we don't want to export them
@@ -138,7 +139,7 @@ sign_request_1_0_test() ->
          {<<"X-Ops-Authorization-6">>, AuthLine(6)}
         ],
     Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                       ?request_time_http, ?path, Algorithm, Version),
+                                  ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
 sign_request_1_1_test() ->
@@ -161,7 +162,7 @@ sign_request_1_1_test() ->
          {<<"X-Ops-Authorization-6">>, AuthLine(6)}
         ],
     Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                       ?request_time_http, ?path, Algorithm, Version),
+                                  ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
 key_type_cert_test() ->
@@ -211,7 +212,7 @@ authenticate_user_request_test_() ->
     Private_key = chef_authn:extract_private_key(RawKey),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     Headers = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                                      ?request_time_http, ?path),
+                                      ?request_time_erlang, ?path),
     GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
     % force time skew to allow a request to be processed 'now'
     TimeSkew = make_skew_time(),
@@ -340,7 +341,7 @@ validate_headers_test_() ->
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = chef_authn:extract_private_key(RawKey),
     Headers = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                                      httpd_util:rfc1123_date(), ?path),
+                                      calendar:universal_time(), ?path),
     GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
     MissingOneTests =
         [ fun() ->
