@@ -219,16 +219,15 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
                                             CanonicalUserId])).
 
 -spec sign_request(rsa_private_key(), user_id(), http_method(),
-                   erlang_time(), http_path()) ->
-      [{binary(), binary()}, ...].
+                   erlang_time() | now, http_path()) ->
+      [{string(), binary()}, ...].
 %% @doc Sign an HTTP request without a body (primarily GET)
 sign_request(PrivateKey, User, Method, Time, Path) ->
     sign_request(PrivateKey, <<"">>, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
 -spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   erlang_time(), http_path()) ->
-    [{binary(), binary()}, ...].
-
+                   erlang_time() | now, http_path()) ->
+    [{string(), binary()}, ...].
 sign_request(PrivateKey, Body, User, Method, Time, Path) ->
     sign_request(PrivateKey, Body, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
@@ -237,20 +236,45 @@ sign_request(PrivateKey, Body, User, Method, Time, Path) ->
 %% Returns a list of header tuples that should be included in the
 %% final HTTP request.
 %%
+%% The keys are returned as strings to match with what is required by ibrowse. The values
+%% are returned as binary().
+%%
+%% Note that the headers can't be passed directly to validate_headers which expects headers to
+%% have binary keys (as returned from the ejson/jiffy parsing routines
 -spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   erlang_time(), http_path(), signing_algorithm(), signing_version()) ->
-    [{binary(), binary()}, ...].
+                   erlang_time() | now, http_path(), signing_algorithm(), signing_version()) ->
+    [{string(), binary()}, ...].
 sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
-    CTime = chef_time_utils:time_iso8601(Time),
+
+    CTime = time_iso8601(Time),
     HashedBody = hashed_body(Body),
     SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
     Sig = base64:encode(public_key:encrypt_private(SignThis, PrivateKey)),
     X_Ops_Sign = iolist_to_binary(io_lib:format("version=~s", [SignVersion])),
-    [{<<"X-Ops-Content-Hash">>, HashedBody},
-     {<<"X-Ops-UserId">>, User},
-     {<<"X-Ops-Sign">>, X_Ops_Sign},
-     {<<"X-Ops-Timestamp">>, CTime}]
-       ++ sig_header_items(Sig).
+    headers_to_list([{<<"X-Ops-Content-Hash">>, HashedBody},
+                     {<<"X-Ops-UserId">>, User},
+                     {<<"X-Ops-Sign">>, X_Ops_Sign},
+                     {<<"X-Ops-Timestamp">>, CTime}]
+                    ++ sig_header_items(Sig)).
+
+%% @doc Return the time as an ISO8601 formatted string.  Accept the atom 'now'
+%% as a argument to represent the current time
+-spec time_iso8601(erlang_time() | now) -> binary().
+time_iso8601(Time) ->
+    Time0 = case Time of
+        now ->
+            calendar:universal_time();
+        _Else ->
+            Time
+    end,
+    chef_time_utils:time_iso8601(Time0).
+
+headers_to_list(SignedHeaders) ->
+    %% TODO: ibrowse requires that header names be atom or
+    %% string, but values can be iolist.  It might be worth
+    %% investigating whether ibrowse can be taught how to handle header
+    %% names that are binaries to avoid conversion.
+    [{binary_to_list(K), binary_to_list(V)} || {K, V} <- SignedHeaders].
 
 %% @doc Generate X-Ops-Authorization-I for use in building auth headers
 -spec xops_header(non_neg_integer()) -> header_name().

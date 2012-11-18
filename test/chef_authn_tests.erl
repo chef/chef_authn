@@ -20,8 +20,6 @@
 -define(request_time_erlang, {{2009, 1, 1}, {12, 0, 0}}).
 -define(user, <<"spec-user">>).
 
-%% These are copied from chef_authn.erl since we don't want to export them
-%% in the include, but need them here for a test
 -define(required_headers, [<<"X-Ops-UserId">>,
                            <<"X-Ops-Timestamp">>,
                            <<"X-Ops-Sign">>,
@@ -127,16 +125,16 @@ sign_request_1_0_test() ->
     AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_0) end,
     EXPECTED_SIGN_RESULT =
         [
-         {<<"X-Ops-Content-Hash">>, ?X_OPS_CONTENT_HASH},
-         {<<"X-Ops-UserId">>, ?user},
-         {<<"X-Ops-Sign">>, <<"version=1.0">>},
-         {<<"X-Ops-Timestamp">>, ?request_time_iso8601},
-         {<<"X-Ops-Authorization-1">>, AuthLine(1)},
-         {<<"X-Ops-Authorization-2">>, AuthLine(2)},
-         {<<"X-Ops-Authorization-3">>, AuthLine(3)},
-         {<<"X-Ops-Authorization-4">>, AuthLine(4)},
-         {<<"X-Ops-Authorization-5">>, AuthLine(5)},
-         {<<"X-Ops-Authorization-6">>, AuthLine(6)}
+         {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH},
+         {"X-Ops-UserId", ?user},
+         {"X-Ops-Sign", <<"version=1.0">>},
+         {"X-Ops-Timestamp", ?request_time_iso8601},
+         {"X-Ops-Authorization-1", AuthLine(1)},
+         {"X-Ops-Authorization-2", AuthLine(2)},
+         {"X-Ops-Authorization-3", AuthLine(3)},
+         {"X-Ops-Authorization-4", AuthLine(4)},
+         {"X-Ops-Authorization-5", AuthLine(5)},
+         {"X-Ops-Authorization-6", AuthLine(6)}
         ],
     Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
                                   ?request_time_erlang, ?path, Algorithm, Version),
@@ -150,16 +148,16 @@ sign_request_1_1_test() ->
     AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES) end,
     EXPECTED_SIGN_RESULT =
         [
-         {<<"X-Ops-Content-Hash">>, ?X_OPS_CONTENT_HASH},
-         {<<"X-Ops-UserId">>, ?user},
-         {<<"X-Ops-Sign">>, <<"version=1.1">>},
-         {<<"X-Ops-Timestamp">>, ?request_time_iso8601},
-         {<<"X-Ops-Authorization-1">>, AuthLine(1)},
-         {<<"X-Ops-Authorization-2">>, AuthLine(2)},
-         {<<"X-Ops-Authorization-3">>, AuthLine(3)},
-         {<<"X-Ops-Authorization-4">>, AuthLine(4)},
-         {<<"X-Ops-Authorization-5">>, AuthLine(5)},
-         {<<"X-Ops-Authorization-6">>, AuthLine(6)}
+         {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH},
+         {"X-Ops-UserId", ?user},
+         {"X-Ops-Sign", <<"version=1.1">>},
+         {"X-Ops-Timestamp", ?request_time_iso8601},
+         {"X-Ops-Authorization-1", AuthLine(1)},
+         {"X-Ops-Authorization-2", AuthLine(2)},
+         {"X-Ops-Authorization-3", AuthLine(3)},
+         {"X-Ops-Authorization-4", AuthLine(4)},
+         {"X-Ops-Authorization-5", AuthLine(5)},
+         {"X-Ops-Authorization-6", AuthLine(6)}
         ],
     Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
                                   ?request_time_erlang, ?path, Algorithm, Version),
@@ -211,8 +209,11 @@ authenticate_user_request_test_() ->
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = chef_authn:extract_private_key(RawKey),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    Headers = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                                      ?request_time_erlang, ?path),
+    Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+                                       ?request_time_erlang, ?path),
+    %% We convert here back into binary keys in headers since that
+    %% is what we'd get when parsing the received headers over the wire
+    Headers = [{list_to_binary(K), V} || {K, V} <- Headers0],
     GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
     % force time skew to allow a request to be processed 'now'
     TimeSkew = make_skew_time(),
@@ -340,8 +341,11 @@ authenticate_user_request_test_() ->
 validate_headers_test_() ->
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = chef_authn:extract_private_key(RawKey),
-    Headers = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                                      calendar:universal_time(), ?path),
+    Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+                                       calendar:universal_time(), ?path),
+    %% We convert here back into binary keys in headers since that
+    %% is what we'd get when parsing the received headers over the wire
+    Headers = [{list_to_binary(K), V} || {K, V} <- Headers0],
     GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
     MissingOneTests =
         [ fun() ->
