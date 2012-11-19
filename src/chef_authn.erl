@@ -271,9 +271,9 @@ time_iso8601(Time) ->
 
 headers_to_list(SignedHeaders) ->
     %% TODO: ibrowse requires that header names be atom or
-    %% string, but values can be iolist.  It might be worth
-    %% investigating whether ibrowse can be taught how to handle header
-    %% names that are binaries to avoid conversion.
+    %% string, but values can be an iolist but not a raw binary.
+    %% It might be worth investigating whether ibrowse can be taught how
+    %% to handle header names and values that are binaries to avoid conversion.
     [{K, binary_to_list(V)} || {K, V} <- SignedHeaders].
 
 %% @doc Generate X-Ops-Authorization-I for use in building auth headers
