@@ -16,7 +16,7 @@
 -define(body, <<"Spec Body">>).
 -define(hashed_body, <<"DFteJZPVv6WKdQmMqZUQUumUyRs=">>).
 -define(request_time_http, <<"Thu, 01 Jan 2009 12:00:00 GMT">>).
--define(request_time_iso8601, <<"2009-01-01T12:00:00Z">>).
+-define(request_time_iso8601, "2009-01-01T12:00:00Z").
 -define(request_time_erlang, {{2009, 1, 1}, {12, 0, 0}}).
 -define(user, <<"spec-user">>).
 
@@ -25,27 +25,28 @@
                            <<"X-Ops-Sign">>,
                            <<"X-Ops-Content-Hash">>]).
 
+-define(X_OPS_USERID, "spec-user").
 -define(X_OPS_AUTHORIZATION_LINES_V1_0,
         [
-         <<"jVHrNniWzpbez/eGWjFnO6lINRIuKOg40ZTIQudcFe47Z9e/HvrszfVXlKG4">>,
-         <<"NMzYZgyooSvU85qkIUmKuCqgG2AIlvYa2Q/2ctrMhoaHhLOCWWoqYNMaEqPc">>,
-         <<"3tKHE+CfvP+WuPdWk4jv4wpIkAz6ZLxToxcGhXmZbXpk56YTmqgBW2cbbw4O">>,
-         <<"IWPZDHSiPcw//AYNgW1CCDptt+UFuaFYbtqZegcBd2n/jzcWODA7zL4KWEUy">>,
-         <<"9q4rlh/+1tBReg60QdsmDRsw/cdO1GZrKtuCwbuD4+nbRdVBKv72rqHX9cu0">>,
-         <<"utju9jzczCyB+sSAQWrxSsXB/b8vV2qs0l4VD2ML+w==">>
+         "jVHrNniWzpbez/eGWjFnO6lINRIuKOg40ZTIQudcFe47Z9e/HvrszfVXlKG4",
+         "NMzYZgyooSvU85qkIUmKuCqgG2AIlvYa2Q/2ctrMhoaHhLOCWWoqYNMaEqPc",
+         "3tKHE+CfvP+WuPdWk4jv4wpIkAz6ZLxToxcGhXmZbXpk56YTmqgBW2cbbw4O",
+         "IWPZDHSiPcw//AYNgW1CCDptt+UFuaFYbtqZegcBd2n/jzcWODA7zL4KWEUy",
+         "9q4rlh/+1tBReg60QdsmDRsw/cdO1GZrKtuCwbuD4+nbRdVBKv72rqHX9cu0",
+         "utju9jzczCyB+sSAQWrxSsXB/b8vV2qs0l4VD2ML+w=="
         ]).
 
 -define(X_OPS_AUTHORIZATION_LINES,
         [
-         <<"UfZD9dRz6rFu6LbP5Mo1oNHcWYxpNIcUfFCffJS1FQa0GtfU/vkt3/O5HuCM">>,
-         <<"1wIFl/U0f5faH9EWpXWY5NwKR031Myxcabw4t4ZLO69CIh/3qx1XnjcZvt2w">>,
-         <<"c2R9bx/43IWA/r8w8Q6decuu0f6ZlNheJeJhaYPI8piX/aH+uHBH8zTACZu8">>,
-         <<"vMnl5MF3/OIlsZc8cemq6eKYstp8a8KYq9OmkB5IXIX6qVMJHA6fRvQEB/7j">>,
-         <<"281Q7oI/O+lE8AmVyBbwruPb7Mp6s4839eYiOdjbDwFjYtbS3XgAjrHlaD7W">>,
-         <<"FDlbAG7H8Dmvo+wBxmtNkszhzbBnEYtuwQqT8nM/8A==">>
+         "UfZD9dRz6rFu6LbP5Mo1oNHcWYxpNIcUfFCffJS1FQa0GtfU/vkt3/O5HuCM",
+         "1wIFl/U0f5faH9EWpXWY5NwKR031Myxcabw4t4ZLO69CIh/3qx1XnjcZvt2w",
+         "c2R9bx/43IWA/r8w8Q6decuu0f6ZlNheJeJhaYPI8piX/aH+uHBH8zTACZu8",
+         "vMnl5MF3/OIlsZc8cemq6eKYstp8a8KYq9OmkB5IXIX6qVMJHA6fRvQEB/7j",
+         "281Q7oI/O+lE8AmVyBbwruPb7Mp6s4839eYiOdjbDwFjYtbS3XgAjrHlaD7W",
+         "FDlbAG7H8Dmvo+wBxmtNkszhzbBnEYtuwQqT8nM/8A=="
         ]).
 
--define(X_OPS_CONTENT_HASH, <<"DFteJZPVv6WKdQmMqZUQUumUyRs=">>).
+-define(X_OPS_CONTENT_HASH, "DFteJZPVv6WKdQmMqZUQUumUyRs=").
 
 -define(expected_sign_string_v10,
         iolist_to_binary(io_lib:format(
@@ -126,8 +127,8 @@ sign_request_1_0_test() ->
     EXPECTED_SIGN_RESULT =
         [
          {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH},
-         {"X-Ops-UserId", ?user},
-         {"X-Ops-Sign", <<"version=1.0">>},
+         {"X-Ops-UserId", ?X_OPS_USERID},
+         {"X-Ops-Sign", "version=1.0"},
          {"X-Ops-Timestamp", ?request_time_iso8601},
          {"X-Ops-Authorization-1", AuthLine(1)},
          {"X-Ops-Authorization-2", AuthLine(2)},
@@ -149,8 +150,8 @@ sign_request_1_1_test() ->
     EXPECTED_SIGN_RESULT =
         [
          {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH},
-         {"X-Ops-UserId", ?user},
-         {"X-Ops-Sign", <<"version=1.1">>},
+         {"X-Ops-UserId", ?X_OPS_USERID},
+         {"X-Ops-Sign", "version=1.1"},
          {"X-Ops-Timestamp", ?request_time_iso8601},
          {"X-Ops-Authorization-1", AuthLine(1)},
          {"X-Ops-Authorization-2", AuthLine(2)},
@@ -213,7 +214,7 @@ authenticate_user_request_test_() ->
                                        ?request_time_erlang, ?path),
     %% We convert here back into binary keys in headers since that
     %% is what we'd get when parsing the received headers over the wire
-    Headers = [{list_to_binary(K), V} || {K, V} <- Headers0],
+    Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
     GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
     % force time skew to allow a request to be processed 'now'
     TimeSkew = make_skew_time(),
