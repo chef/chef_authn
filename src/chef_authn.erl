@@ -251,11 +251,11 @@ sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVers
     SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
     Sig = base64:encode(public_key:encrypt_private(SignThis, PrivateKey)),
     X_Ops_Sign = iolist_to_binary(io_lib:format("version=~s", [SignVersion])),
-    headers_to_list([{"X-Ops-Content-Hash", HashedBody},
-                     {"X-Ops-UserId", User},
-                     {"X-Ops-Sign", X_Ops_Sign},
-                     {"X-Ops-Timestamp", CTime}]
-                    ++ sig_header_items(Sig)).
+    headers_as_str([{"X-Ops-Content-Hash", HashedBody},
+                    {"X-Ops-UserId", User},
+                    {"X-Ops-Sign", X_Ops_Sign},
+                    {"X-Ops-Timestamp", CTime}]
+                   ++ sig_header_items(Sig)).
 
 %% @doc Return the time as an ISO8601 formatted string.  Accept the atom 'now'
 %% as a argument to represent the current time
@@ -269,12 +269,19 @@ time_iso8601(Time) ->
     end,
     chef_time_utils:time_iso8601(Time0).
 
-headers_to_list(SignedHeaders) ->
+headers_as_str(SignedHeaders) ->
     %% TODO: ibrowse requires that header names be atom or
     %% string, but values can be an iolist but not a raw binary.
     %% It might be worth investigating whether ibrowse can be taught how
     %% to handle header names and values that are binaries to avoid conversion.
-    [{K, binary_to_list(V)} || {K, V} <- SignedHeaders].
+    [{as_str(K), as_str(V)} || {K, V} <- SignedHeaders].
+
+%% Helper for ensuring that all values passed to ibrowse in headers are lists
+-spec as_str(binary() | list()) -> list().
+as_str(V) when is_binary(V) ->
+    binary_to_list(V);
+as_str(V) when is_list(V) ->
+    V.
 
 %% @doc Generate X-Ops-Authorization-I for use in building auth headers
 -spec xops_header(non_neg_integer()) -> header_name().
@@ -290,7 +297,7 @@ sig_header_items(Sig) ->
     % Ruby's Base64.encode64 method inserts line feeds every 60
     % encoded characters.
     Lines = sig_to_list(Sig, 60),
-    [ {binary_to_list(xops_header(I)), L} ||
+    [ {xops_header(I), L} ||
         {L, I} <- lists:zip(Lines, lists:seq(1, length(Lines))) ].
 
 %% @doc Split a binary into chunks of size N
