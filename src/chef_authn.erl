@@ -60,6 +60,7 @@
          accepted_signing_version/1,
          extract_public_or_private_key/1,
          extract_private_key/1,
+         extract_public_key/1,
          hash_string/1,
          hash_file/1,
          sign_request/5,
@@ -112,32 +113,54 @@ default_signing_version() ->
 accepted_signing_version(Version) ->
     lists:member(Version, ?signing_versions).
 
--spec process_key( {'RSAPublicKey', binary(), _} |
-                   {'SubjectPublicKeyInfo', _, _}) ->
+-spec process_key({'RSAPublicKey',  binary(), _} |
+                  {'RSAPrivateKey', binary(), _} |
+                  {'SubjectPublicKeyInfo', _, _}) ->
                          rsa_public_key() | rsa_private_key() | {error, bad_key}.
 process_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
     public_key:pem_entry_decode(PubEntry);
 process_key({'RSAPublicKey', Der, _}) ->
     public_key:der_decode('RSAPublicKey', Der);
-process_key({Type, Der, _}) ->
-    public_key:der_decode(Type, Der).
-%process_key(_) ->
-%    {error, bad_key}.
+process_key({'RSAPrivateKey', Der, _}) ->
+        public_key:der_decode('RSAPrivateKey', Der);
+process_key({'Certificate', _Der, _} = CertEntry) ->
+    %% NOTE: assumes the certificate contains public key info and only extracts that.
+    Cert = public_key:pem_entry_decode(CertEntry),
+    TbsCert = Cert#'Certificate'.tbsCertificate,
+    Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
+    {0, KeyDer} = Spki#'SubjectPublicKeyInfo'.subjectPublicKey,
+    public_key:der_decode('RSAPublicKey', KeyDer).
 
--spec extract_public_or_private_key(binary()) -> term() | {error, bad_key}.
+%% @doc Given PEM content as binary, return either an RSA public or private key record (or
+%% error tuple). The PEM can contain an RSA public key in PKCS1, SPKI (X509), or an X509
+%% certificate wrapping an SPKI formatted key. Note that private keys will not be extracted
+%% from X509 certificate data.
+-spec extract_public_or_private_key(binary()) -> #'RSAPublicKey'{}  |
+                                                 #'RSAPrivateKey'{} |
+                                                 {error, bad_key}.
 extract_public_or_private_key(RawKey) ->
-    try public_key:pem_decode(RawKey) of
-        [Key] -> process_key(Key)
+    try
+        [Key] = public_key:pem_decode(RawKey),
+        process_key(Key)
     catch
         _:_ ->
             {error, bad_key}
     end.
 
--spec extract_private_key(binary()) -> term() | {error, bad_key}.
+-spec extract_public_key(binary()) -> #'RSAPublicKey'{} | {error, bad_key}.
+extract_public_key(RawKey) ->
+    case extract_public_or_private_key(RawKey) of
+        #'RSAPublicKey'{} = Key ->
+            Key;
+        _ ->
+            {error, bad_key}
+    end.
+
+-spec extract_private_key(binary()) -> #'RSAPrivateKey'{} | {error, bad_key}.
 extract_private_key(RawKey) ->
-    case catch public_key:pem_decode(RawKey) of
-        [{Type, Der, _}] ->
-            public_key:der_decode(Type, Der);
+    case extract_public_or_private_key(RawKey) of
+        #'RSAPrivateKey'{} = Key ->
+            Key;
         _ ->
             {error, bad_key}
     end.
@@ -219,15 +242,13 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
                                             CanonicalUserId])).
 
 -spec sign_request(rsa_private_key(), user_id(), http_method(),
-                   erlang_time() | now, http_path()) ->
-      [{string(), binary()}, ...].
+                   erlang_time() | now, http_path()) -> [{[any()],[any()]}].
 %% @doc Sign an HTTP request without a body (primarily GET)
 sign_request(PrivateKey, User, Method, Time, Path) ->
     sign_request(PrivateKey, <<"">>, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
 -spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   erlang_time() | now, http_path()) ->
-    [{string(), binary()}, ...].
+                   erlang_time() | now, http_path()) -> [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path) ->
     sign_request(PrivateKey, Body, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
@@ -242,8 +263,8 @@ sign_request(PrivateKey, Body, User, Method, Time, Path) ->
 %% Note that the headers can't be passed directly to validate_headers which expects headers to
 %% have binary keys (as returned from the ejson/jiffy parsing routines
 -spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   erlang_time() | now, http_path(), signing_algorithm(), signing_version()) ->
-    [{string(), binary()}, ...].
+                   erlang_time() | now,
+                   http_path(), signing_algorithm(), signing_version()) -> [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
 
     CTime = time_iso8601(Time),

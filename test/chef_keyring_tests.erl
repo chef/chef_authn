@@ -18,6 +18,7 @@
 -module(chef_keyring_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("public_key/include/public_key.hrl").
 
 -define(LINK, "../test/reload_test.pem").
 
@@ -26,45 +27,61 @@ unset_chef_authn_env() ->
     application:unset_env(chef_authn, keyring_file),
     application:unset_env(chef_authn, keyring_dir).
 
+assert_public_key(#'RSAPublicKey'{} = Key) ->
+    ?assert(Key#'RSAPublicKey'.modulus > 0);
+assert_public_key(BadKey) ->
+    error({{expected, 'RSAPublicKey'}, {got, BadKey}}).
+
+assert_private_key(#'RSAPrivateKey'{} = Key) ->
+    ?assert(Key#'RSAPrivateKey'.prime1 > 0);
+assert_private_key(BadKey) ->
+    error({{expected, 'RSAPrivateKey'}, {got, BadKey}}).
+
 lookup_test_() ->
     {foreach,
      fun() ->
              application:set_env(chef_authn, keyring,
                                  [{test1, "../test/testkey.pem"}]),
              application:set_env(chef_authn, keyring_dir, "../test"),
+             error_logger:tty(false),
              chef_keyring:start_link()
      end,
      fun(_) -> cleanup end,
-     [{"Test private key fetch ",
+     [{"private key fetch",
        fun() ->
                {ok, Key} = chef_keyring:get_key(testkey),
-               ?assertEqual(11, size(Key)),
-               Key1 = tuple_to_list(Key),
-               ['RSAPrivateKey', 'two-prime', FirstInt|_] = Key1,
-               ?assert(is_integer(FirstInt))
+               assert_private_key(Key)
        end},
-      {"Test public key fetch",
+
+      {"public key fetch",
        fun() ->
                {ok, Key} = chef_keyring:get_key(webui_pub),
-               ?assertEqual(3, size(Key)),
-               {'RSAPublicKey', KeyVal, Modulus} = Key,
-               ?assert(is_integer(KeyVal)),
-               ?assert(is_integer(Modulus))
+               assert_public_key(Key)
        end},
-      fun() ->
-              ?assertMatch({error, unknown_key},
-                           chef_keyring:get_key('no-such-key'))
-      end,
-      fun() ->
-              Keys = lists:sort(chef_keyring:list_keys()),
-              ?assertMatch(['clownco-org-admin', example_cert,
-                            knife_ruby_187_priv, knife_ruby_187_pub,
-                            knife_ruby_192_priv, knife_ruby_192_pub,
-                            other_cert, platform_public_key_example,
-                            'skynet-org-admin', spki_public,
-                            test1, testkey, webui_pub],
-                           Keys)
-      end
+
+      {"public key in certificate fetch",
+       fun() ->
+               {ok, Key} = chef_keyring:get_key(example_cert),
+               assert_public_key(Key)
+       end},
+
+      {"fetching unknown key returns error tuple",
+       fun() ->
+               ?assertMatch({error, unknown_key},
+                            chef_keyring:get_key('no-such-key'))
+       end},
+
+      {"list_keys returns all the keys",
+       fun() ->
+               Keys = lists:sort(chef_keyring:list_keys()),
+               ?assertEqual(['clownco-org-admin', example_cert,
+                             knife_ruby_187_priv, knife_ruby_187_pub,
+                             knife_ruby_192_priv, knife_ruby_192_pub,
+                             other_cert, platform_public_key_example,
+                             'skynet-org-admin', spki_public,
+                             test1, testkey, webui_pub],
+                            Keys)
+       end}
      ]}.
 
 
@@ -72,6 +89,7 @@ load_file_test_() ->
     {setup,
      fun() ->
              unset_chef_authn_env(),
+             error_logger:tty(false),
              chef_keyring:start_link()
      end,
      fun(_) -> ok
@@ -110,6 +128,7 @@ load_dir_test_() ->
      fun() ->
              unset_chef_authn_env(),
              application:set_env(chef_authn, keyring_dir, "../test"),
+             error_logger:tty(false),
              chef_keyring:start_link(),
              chef_keyring:reload()
      end,
@@ -130,6 +149,7 @@ reload_changed_dir_test_() ->
              unset_chef_authn_env(),
              application:set_env(chef_authn, keyring_dir, "../test"),
              file:delete(?LINK),
+             error_logger:tty(false),
              chef_keyring:start_link(),
              chef_keyring:reload()
      end,
@@ -173,6 +193,7 @@ reload_changed_dir2_test_() ->
              application:set_env(chef_authn, keyring,
                                  [{test1, "../test/testkey.pem"}]),
              file:delete(?LINK),
+             error_logger:tty(false),
              chef_keyring:start_link(),
              chef_keyring:reload()
      end,
