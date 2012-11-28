@@ -437,3 +437,71 @@ extract_public_or_private_key_test_() ->
                 || K <- BadKeys ]
       end}
     ].
+
+extract_public_key_test_() ->
+    [{"RSA PUBLIC KEY",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/webui_pub.pem"),
+              Key = chef_authn:extract_public_key(Pem),
+              ?assert(Key#'RSAPublicKey'.modulus > 0)
+      end},
+
+     {"PUBLIC KEY",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/spki_public.pem"),
+              Key = chef_authn:extract_public_key(Pem),
+              ?assert(Key#'RSAPublicKey'.modulus > 0)
+      end},
+
+     {"CERTIFICATE",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/example_cert.pem"),
+              Key = chef_authn:extract_public_key(Pem),
+              ?assert(Key#'RSAPublicKey'.modulus > 0)
+      end},
+
+     {"RSA PRIVATE KEY is",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/private_key"),
+              Key = chef_authn:extract_public_or_private_key(Pem),
+              ?assert(Key#'RSAPrivateKey'.prime1 > 0)
+      end},
+
+     {"invalid keys return error tuple", generator,
+      fun() ->
+              %% mangle a key
+              {ok, Pem} = file:read_file("../test/spki_public.pem"),
+              Pem2 = re:replace(Pem, "A", "0", [{return, binary}]),
+              {ok, Priv} = file:read_file("../test/private_key"),
+              BadKeys = [Priv, Pem2, <<"">>, <<"abc">>,
+                         term_to_binary([123, {x, x}])],
+              [ ?_assertEqual({error, bad_key},
+                              chef_authn:extract_public_key(K))
+                || K <- BadKeys ]
+      end}
+    ].
+
+extract_private_key_test_() ->
+    [{"RSA PRIVATE KEY",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/private_key"),
+              Key = chef_authn:extract_private_key(Pem),
+              ?assert(Key#'RSAPrivateKey'.prime1 > 0)
+      end},
+
+     {"invalid keys return error tuple", generator,
+      fun() ->
+              %% mangle a key
+              {ok, Pem} = file:read_file("../test/spki_public.pem"),
+              Munged = re:replace(Pem, "A", "0", [{return, binary}]),
+              {ok, Cert} = file:read_file("../test/example_cert.pem"),
+              {ok, Pub1} = file:read_file("../test/webui_pub.pem"),
+              {ok, Pub2} = file:read_file("../test/spki_public.pem"),
+              BadKeys = [Munged, Cert, Pub1, Pub2,
+                         <<"">>, <<"abc">>,
+                         term_to_binary([123, {x, x}])],
+              [ ?_assertEqual({error, bad_key},
+                              chef_authn:extract_private_key(K))
+                || K <- BadKeys ]
+      end}
+    ].

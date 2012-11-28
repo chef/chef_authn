@@ -60,6 +60,7 @@
          accepted_signing_version/1,
          extract_public_or_private_key/1,
          extract_private_key/1,
+         extract_public_key/1,
          hash_string/1,
          hash_file/1,
          sign_request/5,
@@ -142,6 +143,15 @@ extract_public_or_private_key(RawKey) ->
         process_key(Key)
     catch
         _:_ ->
+            {error, bad_key}
+    end.
+
+-spec extract_public_key(binary()) -> #'RSAPublicKey'{} | {error, bad_key}.
+extract_public_key(RawKey) ->
+    case extract_public_or_private_key(RawKey) of
+        #'RSAPublicKey'{} = Key ->
+            Key;
+        _ ->
             {error, bad_key}
     end.
 
