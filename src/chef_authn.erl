@@ -113,7 +113,8 @@ default_signing_version() ->
 accepted_signing_version(Version) ->
     lists:member(Version, ?signing_versions).
 
--spec process_key({'RSAPublicKey', binary(), _} |
+-spec process_key({'RSAPublicKey',  binary(), _} |
+                  {'RSAPrivateKey', binary(), _} |
                   {'SubjectPublicKeyInfo', _, _}) ->
                          rsa_public_key() | rsa_private_key() | {error, bad_key}.
 process_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
