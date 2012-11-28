@@ -505,3 +505,11 @@ extract_private_key_test_() ->
                 || K <- BadKeys ]
       end}
     ].
+
+hash_file_test() ->
+    {ok, Fd} = file:open("../test/example_cert.pem", [read]),
+    FileHash = chef_authn:hash_file(Fd),
+    {ok, Bin} = file:read_file("../test/example_cert.pem"),
+    ContentHash = chef_authn:hash_string(Bin),
+    ?assert(is_binary(FileHash)),
+    ?assertEqual(ContentHash, FileHash).
