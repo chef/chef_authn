@@ -9,7 +9,7 @@ compile:
 	@rebar compile
 
 dialyzer:
-	@dialyzer -Wrace_conditions -Wunderspecs -r ebin
+	@dialyzer -Wunderspecs -r ebin
 
 eunit: compile
 	@rebar skip_deps=true eunit

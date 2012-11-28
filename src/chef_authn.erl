@@ -145,7 +145,7 @@ extract_public_or_private_key(RawKey) ->
             {error, bad_key}
     end.
 
--spec extract_private_key(binary()) -> term() | {error, bad_key}.
+-spec extract_private_key(binary()) -> #'RSAPrivateKey'{} | {error, bad_key}.
 extract_private_key(RawKey) ->
     case extract_public_or_private_key(RawKey) of
         #'RSAPrivateKey'{} = Key ->
@@ -231,15 +231,13 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
                                             CanonicalUserId])).
 
 -spec sign_request(rsa_private_key(), user_id(), http_method(),
-                   erlang_time() | now, http_path()) ->
-      [{string(), binary()}, ...].
+                   erlang_time() | now, http_path()) -> [{[any()],[any()]}].
 %% @doc Sign an HTTP request without a body (primarily GET)
 sign_request(PrivateKey, User, Method, Time, Path) ->
     sign_request(PrivateKey, <<"">>, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
 -spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   erlang_time() | now, http_path()) ->
-    [{string(), binary()}, ...].
+                   erlang_time() | now, http_path()) -> [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path) ->
     sign_request(PrivateKey, Body, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
@@ -254,8 +252,8 @@ sign_request(PrivateKey, Body, User, Method, Time, Path) ->
 %% Note that the headers can't be passed directly to validate_headers which expects headers to
 %% have binary keys (as returned from the ejson/jiffy parsing routines
 -spec sign_request(rsa_private_key(), http_body(), user_id(), http_method(),
-                   erlang_time() | now, http_path(), signing_algorithm(), signing_version()) ->
-    [{string(), binary()}, ...].
+                   erlang_time() | now,
+                   http_path(), signing_algorithm(), signing_version()) -> [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
 
     CTime = time_iso8601(Time),
