@@ -66,7 +66,8 @@
          sign_request/6,
          sign_request/8,
          authenticate_user_request/6,
-         validate_headers/2
+         validate_headers/2,
+         decode_key_data/1
          ]).
 
 -include_lib("public_key/include/public_key.hrl").
