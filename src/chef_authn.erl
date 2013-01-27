@@ -25,36 +25,11 @@
 %% under the License.
 %%
 
-
 -module(chef_authn).
 -include_lib("eunit/include/eunit.hrl").
 -include("chef_time_utils.hrl").
 
--define(buf_size, 16384).
-
--define(default_signing_algorithm, <<"sha1">>).
-
--define(signing_version_v1_0, <<"1.0">>).
--define(signing_version_v1_1, <<"1.1">>).
--define(signing_version_v1_2, <<"1.2">>).
-
--define(signing_versions, [?signing_version_v1_0, ?signing_version_v1_1, ?signing_version_v1_2]).
-
--define(signing_version_key, <<"version">>).
-
--define(signing_algorithm_key, <<"algorithm">>).
-
--define(version1_sig_format, <<"Method:~s\nHashed Path:~s\n"
-                               "X-Ops-Content-Hash:~s\n"
-                               "X-Ops-Timestamp:~s\nX-Ops-UserId:~ts">>).
-
--define(required_headers, [<<"X-Ops-UserId">>,
-                           <<"X-Ops-Timestamp">>,
-                           <<"X-Ops-Sign">>,
-                           % FIXME: mixlib-authorization requires host, but
-                           % it is not used as part of the signing protocol AFAICT
-                           % <<"host">>,
-                           <<"X-Ops-Content-Hash">>]).
+-include("chef_authn.hrl").
 
 -export([default_signing_algorithm/0,
          accepted_signing_algorithm/1,

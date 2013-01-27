@@ -9,6 +9,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
+-include("../src/chef_authn.hrl").
 
 -define(path, <<"/organizations/clownco">>).
 -define(path_with_query, <<"/organizations/clownco?a=1&b=2">>).
@@ -20,11 +21,6 @@
 -define(request_time_iso8601, "2009-01-01T12:00:00Z").
 -define(request_time_erlang, {{2009, 1, 1}, {12, 0, 0}}).
 -define(user, <<"spec-user">>).
-
--define(required_headers, [<<"X-Ops-UserId">>,
-                           <<"X-Ops-Timestamp">>,
-                           <<"X-Ops-Sign">>,
-                           <<"X-Ops-Content-Hash">>]).
 
 -define(X_OPS_USERID, "spec-user").
 
@@ -85,12 +81,6 @@
                            "X-Ops-UserId:~s",
                            ["POST", ?hashed_path, ?hashed_body,
                             ?request_time_iso8601, chef_authn:hash_string(?user)]))).
-
--define(signing_version_v1_2, <<"1.2">>).
-
--define(signing_version_v1_1, <<"1.1">>).
-
--define(signing_version_v1_0, <<"1.0">>).
 
 hashed_path_test() ->
     ?assertEqual(?hashed_path, chef_authn:hash_string(chef_authn:canonical_path(?path))).
