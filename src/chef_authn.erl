@@ -246,9 +246,9 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
 -spec internal_sign(binary(), rsa_private_key(), signing_version()) ->  binary().
 internal_sign(SignThis, PrivateKey, SignVersion) ->
     BinarySig = case SignVersion of
-                     V when V == <<"1.0">> ; V == <<"1.1">> ->
+                     V when V == ?signing_version_v1_0 ; V == ?signing_version_v1_1 ->
                          public_key:encrypt_private(SignThis, PrivateKey);
-                     <<"1.2">> ->
+                     ?signing_version_v1_2 ->
                          public_key:sign(SignThis, sha, PrivateKey)
                  end,
     base64:encode(BinarySig).
