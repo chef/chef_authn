@@ -239,12 +239,11 @@ decrypt_sig_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     ?assertEqual(?expected_sign_string_v10,
-                 chef_authn:decrypt_sig(AuthSig, Public_key)).
+                 chef_authn:decrypt_sig(AuthSig, {cert, Public_key}, ?signing_version_v1_0)).
 
 decrypt_sig_v1_1_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_1),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    ?debugFmt("AuthSig is ~p~n, Public_key is ~p~n",[AuthSig, Public_key]),
     DecryptSig = chef_authn:decrypt_sig(AuthSig, {cert, Public_key}, ?signing_version_v1_1),
     ?assertEqual(?expected_sign_string_v11, DecryptSig).
 
@@ -255,22 +254,20 @@ decrypt_sig_v1_2_test() ->
     ?assertEqual(true, public_key:verify(Plain, sha, Sig, chef_authn:read_key_data({cert,Public_key}))).
 
 decrypt_tagged_sig_test() ->
-    ?debugHere,
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
-    ?debugHere,
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     ?assertEqual(?expected_sign_string_v10,
                  chef_authn:decrypt_sig(AuthSig, {cert, Public_key}, ?signing_version_v1_0)).
 
 decrypt_sig_fail_platform_style_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
-    {ok, PublicKey} = file:read_file("../test/platform_public_key_example.pem"),
-    ?assertEqual(decrypt_failed, chef_authn:decrypt_sig(AuthSig, PublicKey, ?signing_version_v1_0)).
+    {ok, Public_key} = file:read_file("../test/platform_public_key_example.pem"),
+    ?assertEqual(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key}, ?signing_version_v1_0)).
 
 decrypt_sig_fail_spki_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
-    {ok, PublicKey} = file:read_file("../test/spki_public.pem"),
-    ?assertEqual(decrypt_failed, chef_authn:decrypt_sig(AuthSig, PublicKey)).
+    {ok, Public_key} = file:read_file("../test/spki_public.pem"),
+    ?assertEqual(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key}, ?signing_version_v1_0)).
 
 make_skew_time() ->
     % force time skew to allow for now
@@ -283,7 +280,8 @@ make_skew_time() ->
 authenticate_user_request_test_() ->
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = chef_authn:extract_private_key(RawKey),
-    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    {ok, Public_key0} = file:read_file("../test/example_cert.pem"),
+    Public_key = {cert, Public_key0},
     Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
                                        ?request_time_erlang, ?path),
     %% We convert here back into binary keys in headers since that
@@ -337,9 +335,9 @@ authenticate_user_request_test_() ->
 
      {"no_authn: bad key",
       fun() ->
-              {ok, Other_key} = file:read_file("../test/other_cert.pem"),
+              {ok, Other_key0} = file:read_file("../test/other_cert.pem"),
               BadKey = chef_authn:authenticate_user_request(GetHeader, <<"post">>, ?path,
-                                                 ?body, Other_key,
+                                                 ?body, {cert, Other_key0},
                                                  TimeSkew),
               ?assertEqual({no_authn, bad_sig}, BadKey)
       end

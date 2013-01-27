@@ -447,7 +447,6 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     BodyHash = hashed_body(Body),
     Plain = canonicalize_request(BodyHash, UserId, Method, ReqTime,
                                  Path, SignAlgorithm, SignVersion),
-
     case SignVersion of
         V when V == ?signing_version_v1_0; V == ?signing_version_v1_1 ->
             Decrypted = decrypt_sig(AuthSig, PublicKey, SignVersion),
