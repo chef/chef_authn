@@ -33,10 +33,12 @@
 -define(buf_size, 16384).
 
 -define(default_signing_algorithm, <<"sha1">>).
--define(signing_version_v1_1, <<"1.1">>).
--define(signing_version_v1_0, <<"1.0">>).
--define(signing_versions, [?signing_version_v1_0, ?signing_version_v1_1]).
 
+-define(signing_version_v1_0, <<"1.0">>).
+-define(signing_version_v1_1, <<"1.1">>).
+-define(signing_version_v1_2, <<"1.2">>).
+
+-define(signing_versions, [?signing_version_v1_0, ?signing_version_v1_1, ?signing_version_v1_2]).
 
 -define(signing_version_key, <<"version">>).
 
@@ -187,7 +189,7 @@ hash_file(F, Ctx) ->
 
 %% @doc Canonicalize an HTTP request path by removing doubled slashes
 %% and trailing slash (except for case of root path).
--spec  canonical_path(binary()) -> binary().
+-spec canonical_path(binary()) -> binary().
 canonical_path(Path = <<"/">>) ->
     Path;
 canonical_path(Path) ->
@@ -230,9 +232,9 @@ canonicalize_request(BodyHash, UserId, _Method, Time, _Path, _SignAlgorithm, _Si
 canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignVersion) ->
     Format = ?version1_sig_format,
     CanonicalUserId = case SignVersion of
-                          <<"1.1">> ->
+                          V when V == ?signing_version_v1_1; V == ?signing_version_v1_2 ->
                               hash_string(UserId);
-                          <<"1.0">> ->
+                          ?signing_version_v1_0 ->
                               UserId
                       end,
     iolist_to_binary(io_lib:format(Format, [canonical_method(Method),
@@ -240,6 +242,16 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
                                             BodyHash,
                                             Time,
                                             CanonicalUserId])).
+
+-spec internal_sign(binary(), rsa_private_key(), signing_version()) ->  binary().
+internal_sign(SignThis, PrivateKey, SignVersion) ->
+    BinarySig = case SignVersion of
+                     V when V == <<"1.0">> ; V == <<"1.1">> ->
+                         public_key:encrypt_private(SignThis, PrivateKey);
+                     <<"1.2">> ->
+                         public_key:sign(SignThis, sha, PrivateKey)
+                 end,
+    base64:encode(BinarySig).
 
 -spec sign_request(rsa_private_key(), user_id(), http_method(),
                    erlang_time() | now, http_path()) -> [{[any()],[any()]}].
@@ -266,11 +278,10 @@ sign_request(PrivateKey, Body, User, Method, Time, Path) ->
                    erlang_time() | now,
                    http_path(), signing_algorithm(), signing_version()) -> [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
-
     CTime = time_iso8601(Time),
     HashedBody = hashed_body(Body),
     SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
-    Sig = base64:encode(public_key:encrypt_private(SignThis, PrivateKey)),
+    Sig = internal_sign(SignThis, PrivateKey, SignVersion),
     X_Ops_Sign = iolist_to_binary(io_lib:format("version=~s", [SignVersion])),
     headers_as_str([{"X-Ops-Content-Hash", HashedBody},
                     {"X-Ops-UserId", User},
@@ -432,37 +443,51 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     ReqTime = GetHeader(<<"X-Ops-Timestamp">>),
     ContentHash = GetHeader(<<"X-Ops-Content-Hash">>),
     AuthSig = sig_from_headers(GetHeader, 1, []),
-    Decrypted = decrypt_sig(AuthSig, PublicKey),
     [{algorithm, SignAlgorithm}, {version, SignVersion}] =  validate_headers(GetHeader, TimeSkew),
-
     BodyHash = hashed_body(Body),
     Plain = canonicalize_request(BodyHash, UserId, Method, ReqTime,
                                  Path, SignAlgorithm, SignVersion),
-    try
-        Decrypted = Plain,
-        %% the signing will also validate this, but since we require that the
-        %% X-Ops-Content-Hash be sent, we should verify it. A TODO item is to move this
-        %% check early in the request handling so that we error out before fetching key data
-        %% if the content hash is wrong.
-        ContentHash = BodyHash,
-        {name, UserId}
-    catch
-        error:{badmatch, _} -> {no_authn, bad_sig}
+
+    case SignVersion of
+        V when V == ?signing_version_v1_0; V == ?signing_version_v1_1 ->
+            Decrypted = decrypt_sig(AuthSig, PublicKey, SignVersion),
+            try
+                Decrypted = Plain,
+                %% the signing will also validate this, but since we require that the
+                %% X-Ops-Content-Hash be sent, we should verify it. A TODO item is to move this
+                %% check early in the request handling so that we error out before fetching key data
+                %% if the content hash is wrong.
+                ContentHash = BodyHash,
+                {name, UserId}
+            catch
+                error:{badmatch, _} -> {no_authn, bad_sig}
+            end;
+        ?signing_version_v1_2 ->
+            try
+                public_key:verify(Plain, sha, base64:decode(AuthSig), PublicKey)
+            catch
+                error:{badmatch, _} -> {no_authn, bad_sig}
+            end
     end.
 
--spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary() | decrypt_failed.
-decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
+-spec decrypt_sig(binary(), public_key_data() | rsa_public_key(), signing_version()) -> binary() | decrypt_failed.
+decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK, SignVersion) ->
     try
-        public_key:decrypt_public(base64:decode(Sig), PK)
+        case SignVersion of
+            V when V == ?signing_version_v1_0; V == ?signing_version_v1_1 ->
+                public_key:decrypt_public(base64:decode(Sig), PK)
+        end
     catch
+        error:{case_clause, _}->
+            bad_signing_version;
         error:{badmatch, _} ->
             decode_failed;
         error:decrypt_failed ->
             decrypt_failed
     end;
-decrypt_sig(Sig, KeyData) ->
-    PK = decode_key_data(KeyData),
-    decrypt_sig(Sig, PK).
+decrypt_sig(Sig, {Type, _} = KeyData, SignVersion)  when Type =:= cert orelse Type=:= key ->
+    PK = read_key_data(KeyData),
+    decrypt_sig(Sig, PK, SignVersion).
 
 sig_from_headers(GetHeader, I, Acc) ->
     Header = xops_header(I),
@@ -522,6 +547,31 @@ decode_public_key(Bin) when is_binary(Bin) ->
 -spec decode_cert(binary()) -> rsa_public_key().  %% der_decode only spec's term
 %% decode a Base64 encoded certificate and return the public key
 decode_cert(Bin) ->
+    Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(Bin))),
+    TbsCert = Cert#'Certificate'.tbsCertificate,
+    Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
+    {0, KeyDer} = Spki#'SubjectPublicKeyInfo'.subjectPublicKey,
+    public_key:der_decode('RSAPublicKey', KeyDer).
+
+-spec read_key_data(public_key_data()) -> rsa_public_key().
+read_key_data({cert, Data}) when is_binary(Data) ->
+    read_cert(Data);
+read_key_data({key, Data}) ->
+    read_public_key(Data).
+
+-spec read_public_key(binary() |
+                      {'RSAPublicKey', binary(), _} |
+                      {'SubjectPublicKeyInfo', _, _}) -> rsa_public_key().
+read_public_key({'RSAPublicKey', Der, _}) ->
+    public_key:der_decode('RSAPublicKey', Der);
+read_public_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
+    public_key:pem_entry_decode(PubEntry);
+read_public_key(Bin) when is_binary(Bin) ->
+    [Decode] = public_key:pem_decode(Bin),
+    read_public_key(Decode).
+
+-spec read_cert(binary()) -> rsa_public_key().  %% der_decode only spec's term
+read_cert(Bin) ->
     Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(Bin))),
     TbsCert = Cert#'Certificate'.tbsCertificate,
     Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
