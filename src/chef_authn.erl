@@ -461,7 +461,9 @@ decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK, SignVersion) ->
     end;
 decrypt_sig(Sig, {Type, _} = KeyData, SignVersion)  when Type =:= cert orelse Type=:= key ->
     PK = decode_key_data(KeyData),
-    decrypt_sig(Sig, PK, SignVersion).
+    decrypt_sig(Sig, PK, SignVersion);
+decrypt_sig(Sig, Key, SignVersion) when is_binary(Key) ->
+    decrypt_sig(Sig, {cert, Key}, SignVersion).
 
 sig_from_headers(GetHeader, I, Acc) ->
     Header = xops_header(I),
