@@ -241,7 +241,7 @@ decrypt_sig_v1_2_test() ->
     Sig = base64:decode(iolist_to_binary (?X_OPS_AUTHORIZATION_LINES_V1_2)),
     Plain = ?expected_sign_string_v12,
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    ?assertEqual(true, public_key:verify(Plain, sha, Sig, chef_authn:read_key_data({cert,Public_key}))).
+    ?assertEqual(true, public_key:verify(Plain, sha, Sig, chef_authn:decode_key_data({cert,Public_key}))).
 
 decrypt_tagged_sig_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),

@@ -460,7 +460,7 @@ decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK, SignVersion) ->
             decrypt_failed
     end;
 decrypt_sig(Sig, {Type, _} = KeyData, SignVersion)  when Type =:= cert orelse Type=:= key ->
-    PK = read_key_data(KeyData),
+    PK = decode_key_data(KeyData),
     decrypt_sig(Sig, PK, SignVersion).
 
 sig_from_headers(GetHeader, I, Acc) ->
@@ -521,31 +521,6 @@ decode_public_key(Bin) when is_binary(Bin) ->
 -spec decode_cert(binary()) -> rsa_public_key().  %% der_decode only spec's term
 %% decode a Base64 encoded certificate and return the public key
 decode_cert(Bin) ->
-    Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(Bin))),
-    TbsCert = Cert#'Certificate'.tbsCertificate,
-    Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
-    {0, KeyDer} = Spki#'SubjectPublicKeyInfo'.subjectPublicKey,
-    public_key:der_decode('RSAPublicKey', KeyDer).
-
--spec read_key_data(public_key_data()) -> rsa_public_key().
-read_key_data({cert, Data}) when is_binary(Data) ->
-    read_cert(Data);
-read_key_data({key, Data}) ->
-    read_public_key(Data).
-
--spec read_public_key(binary() |
-                      {'RSAPublicKey', binary(), _} |
-                      {'SubjectPublicKeyInfo', _, _}) -> rsa_public_key().
-read_public_key({'RSAPublicKey', Der, _}) ->
-    public_key:der_decode('RSAPublicKey', Der);
-read_public_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
-    public_key:pem_entry_decode(PubEntry);
-read_public_key(Bin) when is_binary(Bin) ->
-    [Decode] = public_key:pem_decode(Bin),
-    read_public_key(Decode).
-
--spec read_cert(binary()) -> rsa_public_key().  %% der_decode only spec's term
-read_cert(Bin) ->
     Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(Bin))),
     TbsCert = Cert#'Certificate'.tbsCertificate,
     Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
