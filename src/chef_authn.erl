@@ -207,7 +207,7 @@ canonicalize_request(BodyHash, UserId, _Method, Time, _Path, _SignAlgorithm, _Si
 canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignVersion) ->
     Format = ?version1_sig_format,
     CanonicalUserId = case SignVersion of
-                          V when V == ?signing_version_v1_1; V == ?signing_version_v1_2 ->
+                          V when V =:= ?signing_version_v1_1; V =:= ?signing_version_v1_2 ->
                               hash_string(UserId);
                           ?signing_version_v1_0 ->
                               UserId
@@ -221,7 +221,7 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
 -spec internal_sign(binary(), rsa_private_key(), signing_version()) ->  binary().
 internal_sign(SignThis, PrivateKey, SignVersion) ->
     BinarySig = case SignVersion of
-                     V when V == ?signing_version_v1_0 ; V == ?signing_version_v1_1 ->
+                     V when V =:= ?signing_version_v1_0 ; V =:= ?signing_version_v1_1 ->
                          public_key:encrypt_private(SignThis, PrivateKey);
                      ?signing_version_v1_2 ->
                          public_key:sign(SignThis, sha, PrivateKey)
@@ -423,7 +423,7 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     Plain = canonicalize_request(BodyHash, UserId, Method, ReqTime,
                                  Path, SignAlgorithm, SignVersion),
     case SignVersion of
-        V when V == ?signing_version_v1_0; V == ?signing_version_v1_1 ->
+        V when V =:= ?signing_version_v1_0; V =:= ?signing_version_v1_1 ->
             Decrypted = decrypt_sig(AuthSig, PublicKey, SignVersion),
             try
                 Decrypted = Plain,
@@ -448,7 +448,7 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
 decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK, SignVersion) ->
     try
         case SignVersion of
-            V when V == ?signing_version_v1_0; V == ?signing_version_v1_1 ->
+            V when V =:= ?signing_version_v1_0; V =:= ?signing_version_v1_1 ->
                 public_key:decrypt_public(base64:decode(Sig), PK)
         end
     catch
