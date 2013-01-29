@@ -398,6 +398,7 @@ authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
     try
         do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     catch
+        error:_ -> {no_authn, bad_sig};
         throw:Why -> {no_authn, Why}
     end.
 
@@ -407,7 +408,7 @@ authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
 				   http_body(),
 				   public_key_data(),
                    time_skew())
-				  ->  {name, user_id()} | {no_authn, bad_sig}.
+				  ->  {name, user_id()}.
 
 do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
     % NOTE: signing description validation and time_skew validation
@@ -422,28 +423,22 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
                                  Path, SignAlgorithm, SignVersion),
     verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion).
 
-verify_sig(Plain, BodyHash, ContentHash, AuthSig,UserId, PublicKey, SignVersion)
+-spec verify_sig(binary(), binary(), binary(), binary(), binary(),
+                 public_key_data(), binary()) -> {name, user_id()}.
+
+verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion)
   when SignVersion =:= ?SIGNING_VERSION_V1_0;
        SignVersion =:= ?SIGNING_VERSION_V1_1 ->
-    Decrypted = decrypt_sig(AuthSig, PublicKey),
-    try
-        Decrypted = Plain,
-        %% the signing will also validate this, but since we require that the
-        %% X-Ops-Content-Hash be sent, we should verify it. A TODO item is to move this
-        %% check early in the request handling so that we error out before fetching key data
-        %% if the content hash is wrong.
-        ContentHash = BodyHash,
-        {name, UserId}
-    catch
-        error:{badmatch, _} -> {no_authn, bad_sig}
-    end;
+    Plain = decrypt_sig(AuthSig, PublicKey),
+    %% the signing will also validate this, but since we require that the
+    %% X-Ops-Content-Hash be sent, we should verify it. A TODO item is to move this
+    %% check early in the request handling so that we error out before fetching key data
+    %% if the content hash is wrong.
+    ContentHash = BodyHash,
+    {name, UserId};
 verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, ?SIGNING_VERSION_V1_2) ->
-    try
-        true = public_key:verify(Plain, sha, base64:decode(AuthSig), PublicKey),
-        {name, UserId}
-    catch
-        error:{badmatch, _} -> {no_authn, bad_sig}
-    end.
+    true = public_key:verify(Plain, sha, base64:decode(AuthSig), PublicKey),
+    {name, UserId}.
 
 -spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary() | decrypt_failed.
 decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
@@ -459,6 +454,8 @@ decrypt_sig(Sig, {Type, _} = KeyData)  when Type =:= cert orelse Type=:= key ->
 decrypt_sig(Sig, Key) when is_binary(Key) ->
     decrypt_sig(Sig, {cert, Key}).
 
+-spec sig_from_headers(get_header_fun(), non_neg_integer(), [any()]) ->
+    binary().
 sig_from_headers(GetHeader, I, Acc) ->
     Header = xops_header(I),
     case GetHeader(Header) of
