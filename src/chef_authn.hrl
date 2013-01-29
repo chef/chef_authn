@@ -25,25 +25,26 @@
 %% under the License.
 %%
 
--define(buf_size, 16384).
+-define(BUF_SIZE, 16384).
 
--define(default_signing_algorithm, <<"sha1">>).
+-define(DEFAULT_SIGNING_ALGORITHM, <<"sha1">>).
 
--define(signing_version_v1_0, <<"1.0">>).
--define(signing_version_v1_1, <<"1.1">>).
--define(signing_version_v1_2, <<"1.2">>).
+-define(SIGNING_VERSION_V1_0, <<"1.0">>).
+-define(SIGNING_VERSION_V1_1, <<"1.1">>).
+-define(SIGNING_VERSION_V1_2, <<"1.2">>).
 
--define(signing_versions, [?signing_version_v1_0, ?signing_version_v1_1, ?signing_version_v1_2]).
+%% version 1.2 incorporates the related but slightly different RSA PKCS 1.5 SHA+RSA signing method
+-define(SIGNING_VERSIONS, [?SIGNING_VERSION_V1_0, ?SIGNING_VERSION_V1_1, ?SIGNING_VERSION_V1_2]).
 
--define(signing_version_key, <<"version">>).
+-define(SIGNING_VERSION_KEY, <<"version">>).
 
--define(signing_algorithm_key, <<"algorithm">>).
+-define(SIGNING_ALGORITHM_KEY, <<"algorithm">>).
 
--define(version1_sig_format, <<"Method:~s\nHashed Path:~s\n"
+-define(VERSION1_SIG_FORMAT, <<"Method:~s\nHashed Path:~s\n"
                                "X-Ops-Content-Hash:~s\n"
                                "X-Ops-Timestamp:~s\nX-Ops-UserId:~ts">>).
 
--define(required_headers, [<<"X-Ops-UserId">>,
+-define(REQUIRED_HEADERS, [<<"X-Ops-UserId">>,
                            <<"X-Ops-Timestamp">>,
                            <<"X-Ops-Sign">>,
                            % FIXME: mixlib-authorization requires host, but

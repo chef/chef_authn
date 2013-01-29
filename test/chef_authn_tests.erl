@@ -414,10 +414,10 @@ validate_headers_test_() ->
                   Headers2 = proplists:delete(H, Headers),
                   GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
                   ?assertThrow({missing_headers, [H]}, chef_authn:validate_headers(GetHeader2, 10))
-          end || H <- ?required_headers ],
+          end || H <- ?REQUIRED_HEADERS ],
     [{algorithm, _SignAlgorithm}, {version, SignVersion}] = chef_authn:validate_headers(GetHeader, 10),
     [?_assertEqual(chef_authn:default_signing_version(), SignVersion),
-     ?_assertThrow({missing_headers, ?required_headers},
+     ?_assertThrow({missing_headers, ?REQUIRED_HEADERS},
                    chef_authn:validate_headers(fun(<<_X/binary>>) -> undefined end, 1)) ]
         ++ MissingOneTests.
 
