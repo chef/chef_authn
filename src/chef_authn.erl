@@ -219,11 +219,11 @@ canonicalize_userid(UserId, SignVersion)  when SignVersion =:= ?signing_version_
 canonicalize_userid(UserId, ?signing_version_v1_0) ->
             UserId.
 
--spec internal_sign(binary(), rsa_private_key(), signing_version()) ->  binary().
-internal_sign(SignThis, PrivateKey, SignVersion) when SignVersion =:= ?signing_version_v1_0;
+-spec create_signature(binary(), rsa_private_key(), signing_version()) ->  binary().
+create_signature(SignThis, PrivateKey, SignVersion) when SignVersion =:= ?signing_version_v1_0;
                                                       SignVersion =:= ?signing_version_v1_1 ->
     public_key:encrypt_private(SignThis, PrivateKey);
-internal_sign(SignThis, PrivateKey, ?signing_version_v1_2) ->
+create_signature(SignThis, PrivateKey, ?signing_version_v1_2) ->
     public_key:sign(SignThis, sha, PrivateKey).
 
 -spec sign_request(rsa_private_key(), user_id(), http_method(),
@@ -254,7 +254,7 @@ sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVers
     CTime = time_iso8601(Time),
     HashedBody = hashed_body(Body),
     SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
-    Sig = base64:encode(internal_sign(SignThis, PrivateKey, SignVersion)),
+    Sig = base64:encode(create_signature(SignThis, PrivateKey, SignVersion)),
     X_Ops_Sign = iolist_to_binary(io_lib:format("version=~s", [SignVersion])),
     headers_as_str([{"X-Ops-Content-Hash", HashedBody},
                     {"X-Ops-UserId", User},
