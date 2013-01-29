@@ -422,7 +422,9 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
                                  Path, SignAlgorithm, SignVersion),
     verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion).
 
-verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion) when SignVersion =:= ?SIGNING_VERSION_V1_0; SignVersion =:= ?SIGNING_VERSION_V1_1 ->
+verify_sig(Plain, BodyHash, ContentHash, AuthSig,UserId, PublicKey, SignVersion)
+  when SignVersion =:= ?SIGNING_VERSION_V1_0;
+       SignVersion =:= ?SIGNING_VERSION_V1_1 ->
     Decrypted = decrypt_sig(AuthSig, PublicKey),
     try
         Decrypted = Plain,
@@ -435,9 +437,10 @@ verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion
     catch
         error:{badmatch, _} -> {no_authn, bad_sig}
     end;
-verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, _UserId, PublicKey, SignVersion) when SignVersion =:= ?SIGNING_VERSION_V1_2 ->
+verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, ?SIGNING_VERSION_V1_2) ->
     try
-        public_key:verify(Plain, sha, base64:decode(AuthSig), PublicKey)
+        true = public_key:verify(Plain, sha, base64:decode(AuthSig), PublicKey),
+        {name, UserId}
     catch
         error:{badmatch, _} -> {no_authn, bad_sig}
     end.
