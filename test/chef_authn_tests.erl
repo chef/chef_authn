@@ -252,12 +252,12 @@ decrypt_tagged_sig_test() ->
 decrypt_sig_fail_platform_style_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
     {ok, Public_key} = file:read_file("../test/platform_public_key_example.pem"),
-    ?assertEqual(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key})).
+    ?assertError(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key})).
 
 decrypt_sig_fail_spki_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
     {ok, Public_key} = file:read_file("../test/spki_public.pem"),
-    ?assertEqual(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key})).
+    ?assertError(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key})).
 
 make_skew_time() ->
     % force time skew to allow for now

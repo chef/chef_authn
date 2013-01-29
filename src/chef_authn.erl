@@ -440,14 +440,9 @@ verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, ?SIGNING_
     true = public_key:verify(Plain, sha, base64:decode(AuthSig), PublicKey),
     {name, UserId}.
 
--spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary() | decrypt_failed.
+-spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary().
 decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
-    try
-        public_key:decrypt_public(base64:decode(Sig), PK)
-    catch
-        error:decrypt_failed ->
-            decrypt_failed
-    end;
+        public_key:decrypt_public(base64:decode(Sig), PK);
 decrypt_sig(Sig, {Type, _} = KeyData)  when Type =:= cert orelse Type=:= key ->
     PK = decode_key_data(KeyData),
     decrypt_sig(Sig, PK);
