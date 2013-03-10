@@ -443,11 +443,8 @@ verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, ?SIGNING_
 -spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary().
 decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
         public_key:decrypt_public(base64:decode(Sig), PK);
-decrypt_sig(Sig, {Type, _} = KeyData)  when Type =:= cert orelse Type=:= key ->
-    PK = decode_key_data(KeyData),
-    decrypt_sig(Sig, PK);
-decrypt_sig(Sig, Key) when is_binary(Key) ->
-    decrypt_sig(Sig, {cert, Key}).
+decrypt_sig(Sig, KeyData) ->
+    decrypt_sig(Sig, decode_key_data(KeyData)).
 
 -spec sig_from_headers(get_header_fun(), non_neg_integer(), [any()]) ->
     binary().
