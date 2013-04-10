@@ -295,6 +295,23 @@ make_skew_time() ->
                  calendar:now_to_universal_time(os:timestamp())),
     (NowEpoch - ReqTimeEpoch) + 100.
 
+authenticate_user_request_no_body_test_() ->
+    {ok, RawKey} = file:read_file("../test/private_key"),
+    Private_key = chef_authn:extract_private_key(RawKey),
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    Headers0 = chef_authn:sign_request(Private_key, ?user, <<"get">>,
+                                       now, ?path),
+    %% We convert here back into binary keys in headers since that
+    %% is what we'd get when parsing the received headers over the wire
+    Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
+    GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
+    % force time skew to allow a request to be processed 'now'
+    [fun() ->
+             Ok = chef_authn:authenticate_user_request(GetHeader, <<"get">>, ?path, <<>>,
+                                                       Public_key, 600),
+              ?assertEqual({name, ?user}, Ok)
+     end].
+
 authenticate_user_request_1_2_test_() ->
     authenticate_user_request_tests_by_version(<<"1.2">>).
 
