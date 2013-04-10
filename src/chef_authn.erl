@@ -437,7 +437,7 @@ verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion
     ContentHash = BodyHash,
     {name, UserId};
 verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, ?SIGNING_VERSION_V1_2) ->
-    true = public_key:verify(Plain, sha, base64:decode(AuthSig), PublicKey),
+    true = public_key:verify(Plain, sha, base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId}.
 
 -spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary().
@@ -466,7 +466,7 @@ parse_signing_description(Desc) ->
 
 -spec decode_key_data(public_key_data()) -> rsa_public_key().
 %% Decode a Base64 encoded public key which is either
-%% wrapped in a certificate or a public keys which can be in
+%% wrapped in a certificate or a public key which can be in
 %% PKCS1 or SPKI format. The PKCS1 format is deprecated within Chef, but
 %% supported for read.
 %%

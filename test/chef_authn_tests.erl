@@ -213,6 +213,7 @@ sign_request_1_2_test() ->
                        ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
+
 key_type_cert_test() ->
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     ?assertEqual(cert, chef_authn:key_type(Public_key)).
@@ -237,11 +238,16 @@ decrypt_sig_v1_1_test() ->
     DecryptSig = chef_authn:decrypt_sig(AuthSig, Public_key),
     ?assertEqual(?expected_sign_string_v11, DecryptSig).
 
-decrypt_sig_v1_2_test() ->
-    Sig = base64:decode(iolist_to_binary (?X_OPS_AUTHORIZATION_LINES_V1_2)),
+verify_sig_v1_2_test() ->
+    Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_2),
     Plain = ?expected_sign_string_v12,
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    ?assertEqual(true, public_key:verify(Plain, sha, Sig, chef_authn:decode_key_data(Public_key))).
+    ?assertEqual({name,<<"spec-user">>},
+                 chef_authn:verify_sig(Plain, ignore, ignore,
+                                       Sig,
+                                       list_to_binary(?X_OPS_USERID),
+                                       Public_key,
+                                       <<"1.2">>)).
 
 decrypt_tagged_sig_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
@@ -267,12 +273,25 @@ make_skew_time() ->
                  calendar:now_to_universal_time(os:timestamp())),
     (NowEpoch - ReqTimeEpoch) + 100.
 
-authenticate_user_request_test_() ->
+authenticate_user_request_1_2_test_() ->
+    authenticate_user_request_tests_by_version(<<"1.2">>).
+
+authenticate_user_request_1_1_test_() ->
+    authenticate_user_request_tests_by_version(<<"1.1">>).
+
+authenticate_user_request_1_0_test_() ->
+    authenticate_user_request_tests_by_version(<<"1.0">>).
+
+%% These tests exercice chef_uathn:authenticate_user_request/6 parameterized by the signing
+%% protocol version. As long as chef_authn:sign_request/8 supports signing, these tests
+%% should work.
+authenticate_user_request_tests_by_version(SignVersion) ->
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = chef_authn:extract_private_key(RawKey),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    Alg = chef_authn:default_signing_algorithm(),
     Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                                       ?request_time_erlang, ?path),
+                                       ?request_time_erlang, ?path, Alg, SignVersion),
     %% We convert here back into binary keys in headers since that
     %% is what we'd get when parsing the received headers over the wire
     Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
@@ -284,7 +303,7 @@ authenticate_user_request_test_() ->
      {"authenticated user request",
       fun() ->
               Ok = chef_authn:authenticate_user_request(GetHeader, <<"post">>, ?path, ?body,
-                                             Public_key, TimeSkew),
+                                                        Public_key, TimeSkew),
               ?assertEqual({name, ?user}, Ok)
       end
      },
