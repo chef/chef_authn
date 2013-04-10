@@ -205,7 +205,7 @@ canonicalize_request(BodyHash, UserId, _Method, Time, _Path, _SignAlgorithm, _Si
   when BodyHash =:= undefined orelse
          UserId =:= undefined orelse
            Time =:= undefined ->
-    undefined;
+    erlang:error({missing_required_data, {BodyHash, UserId, Time}});
 canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignVersion) ->
     Format = ?VERSION1_SIG_FORMAT,
     CanonicalUserId = canonicalize_userid(UserId, SignVersion),

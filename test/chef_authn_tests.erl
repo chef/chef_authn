@@ -235,6 +235,12 @@ sign_request_1_2_test() ->
                        ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
+sign_bogus_request_test() ->
+    ?assertError({missing_required_data, _},
+                 chef_authn:sign_request(fake_private, ?body, undefined, undefined,
+                                         ?request_time_erlang, ?path,
+                                         chef_authn:default_signing_algorithm(),
+                                         <<"1.1">>)).
 
 key_type_cert_test() ->
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
