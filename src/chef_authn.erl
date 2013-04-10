@@ -168,11 +168,13 @@ hash_file(F, Ctx) ->
 canonical_path(Path = <<"/">>) ->
     Path;
 canonical_path(Path) ->
-    NoDoubles = re:replace(Path, "/+/", <<"/">>, [{return, binary}, global]),
-    Path1 = re:replace(NoDoubles, "/$", % fix emacs erlang-mode: "
-                       "", [{return, binary}]),
     %% remove query parameters
-    re:replace(Path1, "\\?.*$", "", [{return, binary}]).
+    Path1 = re:replace(Path, "\\?.*$", "", [{return, binary}]),
+    NoDoubles = re:replace(Path1, "/+/", <<"/">>, [{return, binary}, global]),
+    case re:replace(NoDoubles, "/$", "", [{return, binary}]) of
+        <<"">> -> <<"/">>;
+        P      -> P
+    end.
 
 
 %% @doc Canonicalize HTTP method as all uppercase binary

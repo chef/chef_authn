@@ -82,6 +82,20 @@
                            ["POST", ?hashed_path, ?hashed_body,
                             ?request_time_iso8601, chef_authn:hash_string(?user)]))).
 
+canonical_path_test_() ->
+    Tests = [{<<"/">>, <<"/">>},
+             {<<"////">>, <<"/">>},
+             {<<"///">>, <<"/">>},
+             {<<"/a/b/c">>, <<"/a/b/c">>},
+             {<<"/a/b/c/">>, <<"/a/b/c">>},
+             {<<"//a/b//c//">>, <<"/a/b/c">>},
+             {<<"//a/b///c///">>, <<"/a/b/c">>},
+             {<<"/a/b/c/?a=1&b=2">>, <<"/a/b/c">>},
+             {<<"/a/b/c?a=1&b=2">>, <<"/a/b/c">>}
+            ],
+    [ ?_assertEqual({P, Expect}, {P, chef_authn:canonical_path(P)})
+      || {P, Expect} <- Tests ].
+
 hashed_path_test() ->
     ?assertEqual(?hashed_path, chef_authn:hash_string(chef_authn:canonical_path(?path))).
 
@@ -91,7 +105,15 @@ hashed_path_query_params_are_ignored_test() ->
     ?assertEqual(?hashed_path, chef_authn:hash_string(chef_authn:canonical_path(?path_with_query))).
 
 hashed_body_test() ->
-    ?assertEqual(?hashed_body, chef_authn:hashed_body(?body)).
+    ?assertEqual(?hashed_body, chef_authn:hashed_body(?body)),
+    {ok, Fd} = file:open("../test/example_cert.pem", [read]),
+    FileHash = chef_authn:hashed_body(Fd),
+    {ok, Bin} = file:read_file("../test/example_cert.pem"),
+    ContentHashFromBin = chef_authn:hashed_body(Bin),
+    ContentHashFromList = chef_authn:hashed_body(binary_to_list(Bin)),
+    ?assert(is_binary(FileHash)),
+    ?assertEqual(ContentHashFromBin, FileHash),
+    ?assertEqual(ContentHashFromList, FileHash).
 
 signing_algorithm_test() ->
     ?assertEqual(<<"sha1">>, chef_authn:default_signing_algorithm()),
@@ -341,6 +363,20 @@ authenticate_user_request_tests_by_version(SignVersion) ->
       end
       },
 
+     {"no_authn: invalid time",
+      fun() ->
+              MyHeader = fun(<<"X-Ops-Timestamp">>) ->
+                                 <<"Tue Apr  9 20:11:33 PDT 2013">>; % not valid format
+                            (H) ->
+                                 GetHeader(H)
+                         end,
+              BadTime = chef_authn:authenticate_user_request(MyHeader, <<"post">>, ?path,
+                                                             ?body, Public_key, TimeSkew),
+              ?assertEqual({no_authn,{bad_headers,[<<"X-Ops-Timestamp">>]}},
+                            BadTime)
+      end
+      },
+
      {"no_authn: bad key",
       fun() ->
               {ok, Other_key} = file:read_file("../test/other_cert.pem"),
@@ -417,7 +453,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
                                                       ?body, Public_key, TimeSkew))
       end
      }
-     ].
+    ].
 
 validate_headers_test_() ->
     {ok, RawKey} = file:read_file("../test/private_key"),
@@ -592,3 +628,4 @@ hash_file_test() ->
     ContentHash = chef_authn:hash_string(Bin),
     ?assert(is_binary(FileHash)),
     ?assertEqual(ContentHash, FileHash).
+    
