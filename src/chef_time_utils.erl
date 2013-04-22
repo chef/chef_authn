@@ -62,6 +62,10 @@ canonical_time(T) when is_list(T) ->
     time_iso8601(httpd_util:convert_request_date(T)).
 
 -spec time_in_bounds(undefined | string() | binary(), time_skew()) -> boolean() | invalid_reqtime.
+%% @doc Check if a time, expressed as an ISO8601 string is equal to the current time, within
+%% a given Skew interval.
+%%
+%% Returns invalid_reqtime if the ISO8601 time can't be parsed
 time_in_bounds(undefined, _Skew) ->
     false;
 time_in_bounds(ReqTime, Skew) ->
@@ -74,7 +78,9 @@ time_in_bounds(ReqTime, Skew) ->
     end.
 
 -spec time_in_bounds(erlang_time(), erlang_time(), time_skew() ) -> boolean().
-time_in_bounds(T1, T2, Skew) ->
+%% @doc Check if two times are equal within a given Skew interval.
+%%
+time_in_bounds(T1, T2, Skew) when is_integer(Skew) ->
     S1 = calendar:datetime_to_gregorian_seconds(T1),
     S2 = calendar:datetime_to_gregorian_seconds(T2),
     (S2 - S1) < Skew.
