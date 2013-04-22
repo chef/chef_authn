@@ -36,3 +36,10 @@ time_in_bounds_test() ->
     ?assertEqual(false, chef_time_utils:time_in_bounds(T1, T4, 60*60)),
     ?assertEqual(true, chef_time_utils:time_in_bounds(T1, T4, 60*60*3)).
 
+%% We expect no function match when Skew is undefined
+undefined_skew_test() ->
+    T1 = {{2011,1,26},{2,3,0}},
+    T2 = {{2011,1,26},{2,3,4}},
+
+    ?assertError(function_clause, chef_time_utils:time_in_bounds(T1, T2, undefined)).
+
