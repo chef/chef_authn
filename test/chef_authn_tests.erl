@@ -9,6 +9,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
+-include("../src/chef_authn.hrl").
 
 -define(path, <<"/organizations/clownco">>).
 -define(path_with_query, <<"/organizations/clownco?a=1&b=2">>).
@@ -21,12 +22,8 @@
 -define(request_time_erlang, {{2009, 1, 1}, {12, 0, 0}}).
 -define(user, <<"spec-user">>).
 
--define(required_headers, [<<"X-Ops-UserId">>,
-                           <<"X-Ops-Timestamp">>,
-                           <<"X-Ops-Sign">>,
-                           <<"X-Ops-Content-Hash">>]).
-
 -define(X_OPS_USERID, "spec-user").
+
 -define(X_OPS_AUTHORIZATION_LINES_V1_0,
         [
          "jVHrNniWzpbez/eGWjFnO6lINRIuKOg40ZTIQudcFe47Z9e/HvrszfVXlKG4",
@@ -37,7 +34,7 @@
          "utju9jzczCyB+sSAQWrxSsXB/b8vV2qs0l4VD2ML+w=="
         ]).
 
--define(X_OPS_AUTHORIZATION_LINES,
+-define(X_OPS_AUTHORIZATION_LINES_V1_1,
         [
          "UfZD9dRz6rFu6LbP5Mo1oNHcWYxpNIcUfFCffJS1FQa0GtfU/vkt3/O5HuCM",
          "1wIFl/U0f5faH9EWpXWY5NwKR031Myxcabw4t4ZLO69CIh/3qx1XnjcZvt2w",
@@ -45,6 +42,15 @@
          "vMnl5MF3/OIlsZc8cemq6eKYstp8a8KYq9OmkB5IXIX6qVMJHA6fRvQEB/7j",
          "281Q7oI/O+lE8AmVyBbwruPb7Mp6s4839eYiOdjbDwFjYtbS3XgAjrHlaD7W",
          "FDlbAG7H8Dmvo+wBxmtNkszhzbBnEYtuwQqT8nM/8A=="
+        ]).
+-define(X_OPS_AUTHORIZATION_LINES_V1_2,
+        [
+          "HtjhPysvmPf7mFHZ+Ze4rLMucDv4ImPxv5kdJghpVwLo9tuE6VSmbuh3tIBp",
+          "OmVH1sKOqyv6x5fkLaHq0FIYTEgcdXrN86rkFJBvExRzOuL7JHGXKIIzohc9",
+          "BZBcF2LAGv2UY33TMXLhQYIIKh/5uWYZ7QsHjadgWo5nEiFpiy5VCoMKidmr",
+          "DH7jYUZeXCFMgfsLlN6mlilc/iAGnktJwhAQPvIDgJS1cOHqFeWzaU2FRjvQ",
+          "h6AUrsvhJ6C/5uJu6h0DT4uk5w5uVameyI/Cs+0KI/XLCk27dOl4X+SqBN9D",
+          "FDp0m8rzMtOdsPkO/IAgbdpHTWoh8AXmPhh8t6+PfQ=="
         ]).
 
 -define(X_OPS_CONTENT_HASH, "DFteJZPVv6WKdQmMqZUQUumUyRs=").
@@ -58,7 +64,7 @@
                            ["POST", ?hashed_path, ?hashed_body,
                             ?request_time_iso8601, ?user]))).
 
--define(expected_sign_string,
+-define(expected_sign_string_v11,
         iolist_to_binary(io_lib:format(
                            "Method:~s\nHashed Path:~s\n"
                            "X-Ops-Content-Hash:~s\n"
@@ -67,7 +73,28 @@
                            ["POST", ?hashed_path, ?hashed_body,
                             ?request_time_iso8601, chef_authn:hash_string(?user)]))).
 
+-define(expected_sign_string_v12,
+        iolist_to_binary(io_lib:format(
+                           "Method:~s\nHashed Path:~s\n"
+                           "X-Ops-Content-Hash:~s\n"
+                           "X-Ops-Timestamp:~s\n"
+                           "X-Ops-UserId:~s",
+                           ["POST", ?hashed_path, ?hashed_body,
+                            ?request_time_iso8601, chef_authn:hash_string(?user)]))).
 
+canonical_path_test_() ->
+    Tests = [{<<"/">>, <<"/">>},
+             {<<"////">>, <<"/">>},
+             {<<"///">>, <<"/">>},
+             {<<"/a/b/c">>, <<"/a/b/c">>},
+             {<<"/a/b/c/">>, <<"/a/b/c">>},
+             {<<"//a/b//c//">>, <<"/a/b/c">>},
+             {<<"//a/b///c///">>, <<"/a/b/c">>},
+             {<<"/a/b/c/?a=1&b=2">>, <<"/a/b/c">>},
+             {<<"/a/b/c?a=1&b=2">>, <<"/a/b/c">>}
+            ],
+    [ ?_assertEqual({P, Expect}, {P, chef_authn:canonical_path(P)})
+      || {P, Expect} <- Tests ].
 
 hashed_path_test() ->
     ?assertEqual(?hashed_path, chef_authn:hash_string(chef_authn:canonical_path(?path))).
@@ -78,7 +105,15 @@ hashed_path_query_params_are_ignored_test() ->
     ?assertEqual(?hashed_path, chef_authn:hash_string(chef_authn:canonical_path(?path_with_query))).
 
 hashed_body_test() ->
-    ?assertEqual(?hashed_body, chef_authn:hashed_body(?body)).
+    ?assertEqual(?hashed_body, chef_authn:hashed_body(?body)),
+    {ok, Fd} = file:open("../test/example_cert.pem", [read]),
+    FileHash = chef_authn:hashed_body(Fd),
+    {ok, Bin} = file:read_file("../test/example_cert.pem"),
+    ContentHashFromBin = chef_authn:hashed_body(Bin),
+    ContentHashFromList = chef_authn:hashed_body(binary_to_list(Bin)),
+    ?assert(is_binary(FileHash)),
+    ?assertEqual(ContentHashFromBin, FileHash),
+    ?assertEqual(ContentHashFromList, FileHash).
 
 signing_algorithm_test() ->
     ?assertEqual(<<"sha1">>, chef_authn:default_signing_algorithm()),
@@ -91,7 +126,7 @@ signing_version_test() ->
     ?assertEqual(<<"1.1">>, chef_authn:default_signing_version()),
     ?assertEqual(true, chef_authn:accepted_signing_version(<<"1.1">>)),
     ?assertEqual(true, chef_authn:accepted_signing_version(<<"1.0">>)),
-    ?assertEqual(false, chef_authn:accepted_signing_version(<<"1.2">>)),
+    ?assertEqual(true, chef_authn:accepted_signing_version(<<"1.2">>)),
     ?assertEqual(false, chef_authn:accepted_signing_version(1.0)),
     ?assertEqual(false, chef_authn:accepted_signing_version("1.0")).
 
@@ -104,20 +139,32 @@ canonicalize_request_v1_0_test() ->
 
     % verify normalization
     Val2 = chef_authn:canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601,
-                                <<"/organizations//clownco/">>, Algorithm, Version),
+                                <<"/organizations/clownco/">>, Algorithm, Version),
     ?assertEqual(?expected_sign_string_v10, Val2).
 
-canonicalize_request_test() ->
+canonicalize_request_v_1_1_test() ->
     Algorithm = chef_authn:default_signing_algorithm(),
-    Version = chef_authn:default_signing_version(),
+    Version = <<"1.1">>,
     Val1 = chef_authn:canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601, ?path,
                                            Algorithm, Version),
-    ?assertEqual(?expected_sign_string, Val1),
+    ?assertEqual(?expected_sign_string_v11, Val1),
 
     % verify normalization
-    Val2 = chef_authn:canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601,
-                                <<"/organizations//clownco/">>, Algorithm, Version),
-    ?assertEqual(?expected_sign_string, Val2).
+    Val2 = chef_authn:canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601, ?path,
+                                Algorithm, Version),
+    ?assertEqual(?expected_sign_string_v11, Val2).
+
+canonicalize_request_v_1_2_test() ->
+    Algorithm = chef_authn:default_signing_algorithm(),
+    Version = <<"1.2">>,
+    Val1 = chef_authn:canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601, ?path,
+                                           Algorithm, Version),
+    ?assertEqual(?expected_sign_string_v12, Val1),
+
+    % verify normalization
+    Val2 = chef_authn:canonicalize_request(?hashed_body, ?user, <<"post">>, ?request_time_iso8601, ?path,
+                                           Algorithm, Version),
+    ?assertEqual(?expected_sign_string_v12, Val2).
 
 sign_request_1_0_test() ->
     Algorithm = chef_authn:default_signing_algorithm(),
@@ -147,7 +194,7 @@ sign_request_1_1_test() ->
     Version = <<"1.1">>,
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = chef_authn:extract_private_key(RawKey),
-    AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES) end,
+    AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_1) end,
     EXPECTED_SIGN_RESULT =
         [
          {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH},
@@ -165,6 +212,36 @@ sign_request_1_1_test() ->
                                   ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
+sign_request_1_2_test() ->
+    Algorithm = chef_authn:default_signing_algorithm(),
+    Version = <<"1.2">>,
+    {ok, RawKey} = file:read_file("../test/private_key"),
+    Private_key = chef_authn:extract_private_key(RawKey),
+    AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_2) end,
+    EXPECTED_SIGN_RESULT =
+        [
+         {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH},
+         {"X-Ops-UserId", ?X_OPS_USERID},
+         {"X-Ops-Sign", "version=1.2"},
+         {"X-Ops-Timestamp", ?request_time_iso8601},
+         {"X-Ops-Authorization-1", AuthLine(1)},
+         {"X-Ops-Authorization-2", AuthLine(2)},
+         {"X-Ops-Authorization-3", AuthLine(3)},
+         {"X-Ops-Authorization-4", AuthLine(4)},
+         {"X-Ops-Authorization-5", AuthLine(5)},
+         {"X-Ops-Authorization-6", AuthLine(6)}
+        ],
+    Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+                       ?request_time_erlang, ?path, Algorithm, Version),
+    ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
+
+sign_bogus_request_test() ->
+    ?assertError({missing_required_data, _},
+                 chef_authn:sign_request(fake_private, ?body, undefined, undefined,
+                                         ?request_time_erlang, ?path,
+                                         chef_authn:default_signing_algorithm(),
+                                         <<"1.1">>)).
+
 key_type_cert_test() ->
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     ?assertEqual(cert, chef_authn:key_type(Public_key)).
@@ -178,26 +255,43 @@ key_type_spki_pk_test() ->
     ?assertEqual(key, chef_authn:key_type(Public_key)).
 
 decrypt_sig_test() ->
-    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
+    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    ?assertEqual(?expected_sign_string,
+    ?assertEqual(?expected_sign_string_v10,
                  chef_authn:decrypt_sig(AuthSig, Public_key)).
 
-decrypt_tagged_sig_test() ->
-    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
+decrypt_sig_v1_1_test() ->
+    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_1),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    ?assertEqual(?expected_sign_string,
-                 chef_authn:decrypt_sig(AuthSig, {cert, Public_key})).
+    DecryptSig = chef_authn:decrypt_sig(AuthSig, Public_key),
+    ?assertEqual(?expected_sign_string_v11, DecryptSig).
+
+verify_sig_v1_2_test() ->
+    Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_2),
+    Plain = ?expected_sign_string_v12,
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    ?assertEqual({name,<<"spec-user">>},
+                 chef_authn:verify_sig(Plain, ignore, ignore,
+                                       Sig,
+                                       list_to_binary(?X_OPS_USERID),
+                                       Public_key,
+                                       <<"1.2">>)).
+
+decrypt_tagged_sig_test() ->
+    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    ?assertEqual(?expected_sign_string_v10,
+                 chef_authn:decrypt_sig(AuthSig, Public_key)).
 
 decrypt_sig_fail_platform_style_test() ->
-    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
-    {ok, PublicKey} = file:read_file("../test/platform_public_key_example.pem"),
-    ?assertEqual(decrypt_failed, chef_authn:decrypt_sig(AuthSig, PublicKey)).
+    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
+    {ok, Public_key} = file:read_file("../test/platform_public_key_example.pem"),
+    ?assertError(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key})).
 
 decrypt_sig_fail_spki_test() ->
-    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES),
-    {ok, PublicKey} = file:read_file("../test/spki_public.pem"),
-    ?assertEqual(decrypt_failed, chef_authn:decrypt_sig(AuthSig, PublicKey)).
+    AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
+    {ok, Public_key} = file:read_file("../test/spki_public.pem"),
+    ?assertError(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key})).
 
 make_skew_time() ->
     % force time skew to allow for now
@@ -207,12 +301,42 @@ make_skew_time() ->
                  calendar:now_to_universal_time(os:timestamp())),
     (NowEpoch - ReqTimeEpoch) + 100.
 
-authenticate_user_request_test_() ->
+authenticate_user_request_no_body_test_() ->
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = chef_authn:extract_private_key(RawKey),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    Headers0 = chef_authn:sign_request(Private_key, ?user, <<"get">>,
+                                       now, ?path),
+    %% We convert here back into binary keys in headers since that
+    %% is what we'd get when parsing the received headers over the wire
+    Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
+    GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
+    % force time skew to allow a request to be processed 'now'
+    [fun() ->
+             Ok = chef_authn:authenticate_user_request(GetHeader, <<"get">>, ?path, <<>>,
+                                                       Public_key, 600),
+              ?assertEqual({name, ?user}, Ok)
+     end].
+
+authenticate_user_request_1_2_test_() ->
+    authenticate_user_request_tests_by_version(<<"1.2">>).
+
+authenticate_user_request_1_1_test_() ->
+    authenticate_user_request_tests_by_version(<<"1.1">>).
+
+authenticate_user_request_1_0_test_() ->
+    authenticate_user_request_tests_by_version(<<"1.0">>).
+
+%% These tests exercice chef_uathn:authenticate_user_request/6 parameterized by the signing
+%% protocol version. As long as chef_authn:sign_request/8 supports signing, these tests
+%% should work.
+authenticate_user_request_tests_by_version(SignVersion) ->
+    {ok, RawKey} = file:read_file("../test/private_key"),
+    Private_key = chef_authn:extract_private_key(RawKey),
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    Alg = chef_authn:default_signing_algorithm(),
     Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                                       ?request_time_erlang, ?path),
+                                       ?request_time_erlang, ?path, Alg, SignVersion),
     %% We convert here back into binary keys in headers since that
     %% is what we'd get when parsing the received headers over the wire
     Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
@@ -224,7 +348,7 @@ authenticate_user_request_test_() ->
      {"authenticated user request",
       fun() ->
               Ok = chef_authn:authenticate_user_request(GetHeader, <<"post">>, ?path, ?body,
-                                             Public_key, TimeSkew),
+                                                        Public_key, TimeSkew),
               ?assertEqual({name, ?user}, Ok)
       end
      },
@@ -259,6 +383,20 @@ authenticate_user_request_test_() ->
               BadTime = chef_authn:authenticate_user_request(GetHeader, <<"post">>, ?path,
                                                   ?body, Public_key, 600),
               ?assertEqual({no_authn, bad_clock}, BadTime)
+      end
+      },
+
+     {"no_authn: invalid time",
+      fun() ->
+              MyHeader = fun(<<"X-Ops-Timestamp">>) ->
+                                 <<"Tue Apr  9 20:11:33 PDT 2013">>; % not valid format
+                            (H) ->
+                                 GetHeader(H)
+                         end,
+              BadTime = chef_authn:authenticate_user_request(MyHeader, <<"post">>, ?path,
+                                                             ?body, Public_key, TimeSkew),
+              ?assertEqual({no_authn,{bad_headers,[<<"X-Ops-Timestamp">>]}},
+                            BadTime)
       end
       },
 
@@ -338,7 +476,7 @@ authenticate_user_request_test_() ->
                                                       ?body, Public_key, TimeSkew))
       end
      }
-     ].
+    ].
 
 validate_headers_test_() ->
     {ok, RawKey} = file:read_file("../test/private_key"),
@@ -354,10 +492,10 @@ validate_headers_test_() ->
                   Headers2 = proplists:delete(H, Headers),
                   GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
                   ?assertThrow({missing_headers, [H]}, chef_authn:validate_headers(GetHeader2, 10))
-          end || H <- ?required_headers ],
+          end || H <- ?REQUIRED_HEADERS ],
     [{algorithm, _SignAlgorithm}, {version, SignVersion}] = chef_authn:validate_headers(GetHeader, 10),
     [?_assertEqual(chef_authn:default_signing_version(), SignVersion),
-     ?_assertThrow({missing_headers, ?required_headers},
+     ?_assertThrow({missing_headers, ?REQUIRED_HEADERS},
                    chef_authn:validate_headers(fun(<<_X/binary>>) -> undefined end, 1)) ]
         ++ MissingOneTests.
 
@@ -513,3 +651,4 @@ hash_file_test() ->
     ContentHash = chef_authn:hash_string(Bin),
     ?assert(is_binary(FileHash)),
     ?assertEqual(ContentHash, FileHash).
+    
