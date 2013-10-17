@@ -89,10 +89,7 @@ init([]) ->
     try
         State = load(#state{}),
         %% TODO : Decide how and where we want to handle reloading of keys...
-        Interval = case application:get_env(chef_authn, keyring_reload_interval) of
-                       undefined -> ?RELOAD_INTERVAL_MS;
-                       {ok, I} -> I
-                   end,
+        Interval = envy:get(chef_authn, keyring_reload_interval, ?RELOAD_INTERVAL_MS, integer),
         timer:apply_interval(Interval, ?MODULE, reload_if_changed, []),
         {ok, State}
     catch
@@ -162,21 +159,18 @@ load(State) ->
                 last_updated = os:timestamp()}.
 
 load_keyring_from_env(OldKeys) ->
-    case application:get_env(chef_authn, keyring) of
-        undefined -> OldKeys;
-        {ok, KeyRing} when is_list(KeyRing) ->
+    case envy:get(chef_authn, keyring, OldKeys, list) of
+        OldKeys ->
+            OldKeys;
+        KeyRing ->
             {ok, Keys} = load_keyring_files(KeyRing, OldKeys),
-            Keys;
-        {ok, KeyRing} ->
-            error_logger:error_msg("Keyring not parsed properly ~s ~n", [KeyRing]),
-            throw({bad_keyring, KeyRing})
+            Keys
     end.
-
+    
 check_keyring_dir() ->
-    case application:get_env(chef_authn, keyring_dir) of
-        undefined -> {undef, erlang:universaltime()};
-        {ok, Path} -> {Path, modtime(Path)}
-    end.
+    Path = envy:get(chef_authn, keyring_dir, undef, string),
+    {Path, modtime(Path)}.
+
 
 %%%
 %%% Load all of the .pem files in the specified directory into the keys dictionary
@@ -228,6 +222,8 @@ key_from_file(Name, File) ->
 
 %%% Last modified time in UTC
 -include_lib("kernel/include/file.hrl").
+modtime(undef) ->
+    erlang:universaltime();
 modtime(File) ->
     case file:read_file_info(File) of
         {ok, #file_info{mtime = MTime}} ->
