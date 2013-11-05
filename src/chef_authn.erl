@@ -393,7 +393,7 @@ validate_sign_description(GetHeader) ->
                                 http_method(),
                                 http_path(),
                                 http_body(),
-                                public_key_data(),
+                                public_key_data() | rsa_public_key(),
                                 time_skew()) ->
 				       {name, user_id()} | {no_authn, Reason::term()}.
 authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
@@ -408,7 +408,7 @@ authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
 				   http_method(),
 				   http_path(),
 				   http_body(),
-				   public_key_data(),
+                   public_key_data() | rsa_public_key(),
                    time_skew())
 				  ->  {name, user_id()}.
 
@@ -426,7 +426,7 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion).
 
 -spec verify_sig(binary(), binary(), binary(), binary(), binary(),
-                 public_key_data(), binary()) -> {name, user_id()}.
+                 public_key_data() | rsa_public_key(), binary()) -> {name, user_id()}.
 
 verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion)
   when SignVersion =:= ?SIGNING_VERSION_V1_0;
