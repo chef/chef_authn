@@ -2,3 +2,6 @@
 deps/
 ebin/
 ebin_dialyzer/
+
+.concrete/
+deps.plt
