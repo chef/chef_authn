@@ -217,7 +217,7 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
 
 canonicalize_userid(UserId, SignVersion)  when SignVersion =:= ?SIGNING_VERSION_V1_1;
                                                SignVersion =:= ?SIGNING_VERSION_V1_2 ->
-            hash_string(UserId);    
+            hash_string(UserId);
 canonicalize_userid(UserId, ?SIGNING_VERSION_V1_0) ->
             UserId.
 
@@ -393,9 +393,9 @@ validate_sign_description(GetHeader) ->
                                 http_method(),
                                 http_path(),
                                 http_body(),
-                                public_key_data(),
+                                public_key_data() | rsa_public_key(),
                                 time_skew()) ->
-				       {name, user_id()} | {no_authn, Reason::term()}.
+                       {name, user_id()} | {no_authn, Reason::term()}.
 authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
     try
         do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
@@ -405,12 +405,12 @@ authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
     end.
 
 -spec do_authenticate_user_request(get_header_fun(),
-				   http_method(),
-				   http_path(),
-				   http_body(),
-				   public_key_data(),
+                   http_method(),
+                   http_path(),
+                   http_body(),
+                   public_key_data() | rsa_public_key(),
                    time_skew())
-				  ->  {name, user_id()}.
+                  ->  {name, user_id()}.
 
 do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
     % NOTE: signing description validation and time_skew validation
@@ -426,7 +426,7 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion).
 
 -spec verify_sig(binary(), binary(), binary(), binary(), binary(),
-                 public_key_data(), binary()) -> {name, user_id()}.
+                 public_key_data() | rsa_public_key(), binary()) -> {name, user_id()}.
 
 verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion)
   when SignVersion =:= ?SIGNING_VERSION_V1_0;
