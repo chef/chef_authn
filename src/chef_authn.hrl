@@ -51,3 +51,7 @@
                            % it is not used as part of the signing protocol AFAICT
                            % <<"host">>,
                            <<"X-Ops-Content-Hash">>]).
+
+-record(key_pair, {public_key :: binary(),
+                   private_key :: binary()}).
+
