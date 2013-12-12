@@ -1,0 +1,5 @@
+%% encoding: UTF-8
+{application,chef_authn}.
+{packages,[]}.
+{modules,[chef_authn,chef_keygen_cache,chef_keygen_worker,
+          chef_keygen_worker_sup,chef_keyring,chef_time_utils]}.

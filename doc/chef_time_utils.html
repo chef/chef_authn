@@ -1,0 +1,82 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Module chef_time_utils</title>
+<link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
+</head>
+<body bgcolor="white">
+<div class="navbar"><a name="#navbar_top"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<hr>
+
+<h1>Module chef_time_utils</h1>
+<ul class="index"><li><a href="#description">Description</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>chef_time_utils - helpers for converting between http and erlang time.
+<p>Copyright © 2011-2012 Opscode, Inc. All Rights Reserved.</p>
+
+<p><b>Authors:</b> Seth Falcon (<a href="mailto:seth@opscode.com"><tt>seth@opscode.com</tt></a>), Christopher Brown (<a href="mailto:cb@opscode.com"><tt>cb@opscode.com</tt></a>).</p>
+
+<h2><a name="description">Description</a></h2><p>chef_time_utils - helpers for converting between http and erlang time</p>
+ 
+  <p>This file is provided to you under the Apache License,  
+Version 2.0 (the "License"); you may not use this file  
+except in compliance with the License.  You may obtain  
+a copy of the License at</p>
+ 
+    <p>http://www.apache.org/licenses/LICENSE-2.0</p>
+ 
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+ 
+<h2><a name="index">Function Index</a></h2>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#canonical_time-1">canonical_time/1</a></td><td>Convert a string or binary HTTP request time to iso8601 format.</td></tr>
+<tr><td valign="top"><a href="#time_in_bounds-2">time_in_bounds/2</a></td><td>Check if a time, expressed as an ISO8601 string is equal to the current time, within  
+a given Skew interval.</td></tr>
+<tr><td valign="top"><a href="#time_in_bounds-3">time_in_bounds/3</a></td><td>Check if two times are equal within a given Skew interval.</td></tr>
+<tr><td valign="top"><a href="#time_iso8601-1">time_iso8601/1</a></td><td>Converts Erlang time-tuple to iso8601 formatted date string.</td></tr>
+<tr><td valign="top"><a href="#time_iso8601_to_date_time-1">time_iso8601_to_date_time/1</a></td><td>Convert an iso8601 time string to Erlang date time
+  representation.</td></tr>
+</table>
+
+<h2><a name="functions">Function Details</a></h2>
+
+<h3 class="function"><a name="canonical_time-1">canonical_time/1</a></h3>
+<div class="spec">
+<p><tt>canonical_time(T::string() | binary()) -&gt; <a href="#type-iso8601_time">iso8601_time()</a></tt><br></p>
+</div><p>Convert a string or binary HTTP request time to iso8601 format</p>
+
+<h3 class="function"><a name="time_in_bounds-2">time_in_bounds/2</a></h3>
+<div class="spec">
+<p><tt>time_in_bounds(ReqTime::undefined | string() | binary(), Skew::<a href="#type-time_skew">time_skew()</a>) -&gt; boolean() | invalid_reqtime</tt><br></p>
+</div><p><p>Check if a time, expressed as an ISO8601 string is equal to the current time, within  
+a given Skew interval.</p>
+ 
+  Returns invalid_reqtime if the ISO8601 time can't be parsed</p>
+
+<h3 class="function"><a name="time_in_bounds-3">time_in_bounds/3</a></h3>
+<div class="spec">
+<p><tt>time_in_bounds(T1::<a href="#type-erlang_time">erlang_time()</a>, T2::<a href="#type-erlang_time">erlang_time()</a>, Skew::<a href="#type-time_skew">time_skew()</a>) -&gt; boolean()</tt><br></p>
+</div><p>Check if two times are equal within a given Skew interval.
+ </p>
+
+<h3 class="function"><a name="time_iso8601-1">time_iso8601/1</a></h3>
+<div class="spec">
+<p><tt>time_iso8601(X1::<a href="#type-erlang_time">erlang_time()</a> | now) -&gt; binary()</tt><br></p>
+</div><p><p>Converts Erlang time-tuple to iso8601 formatted date string.</p>
+ 
+  Example output looks like <code>&lt;&lt;"2003-12-13T18:30:02Z"&gt;&gt;</code></p>
+
+<h3 class="function"><a name="time_iso8601_to_date_time-1">time_iso8601_to_date_time/1</a></h3>
+<div class="spec">
+<p><tt>time_iso8601_to_date_time(ATime::string() | binary()) -&gt; <a href="#type-erlang_time">erlang_time()</a></tt><br></p>
+</div><p>Convert an iso8601 time string to Erlang date time
+  representation.</p>
+<hr>
+
+<div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<p><i>Generated by EDoc, Jul 9 2014, 00:12:49.</i></p>
+</body>
+</html>

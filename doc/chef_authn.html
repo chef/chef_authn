@@ -1,0 +1,226 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Module chef_authn</title>
+<link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
+</head>
+<body bgcolor="white">
+<div class="navbar"><a name="#navbar_top"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<hr>
+
+<h1>Module chef_authn</h1>
+<ul class="index"><li><a href="#description">Description</a></li><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>chef_authn - Request signing and authentication for Opscode Chef.
+
+<p><b>Authors:</b> Seth Falcon (<a href="mailto:seth@opscode.com"><tt>seth@opscode.com</tt></a>), Christopher Brown (<a href="mailto:cb@opscode.com"><tt>cb@opscode.com</tt></a>).</p>
+
+<h2><a name="description">Description</a></h2><p>chef_authn - Request signing and authentication for Opscode Chef</p>
+ 
+  <p>This module is an Erlang port of the mixlib-authentication Ruby gem.  
+It can be used to sign HTTP requests to send to a Chef server or to  
+validate such requests (for server implementation).</p>
+ 
+  <p>Copyright 2011-2012 Opscode, Inc. All Rights Reserved.</p>
+ 
+  <p>This file is provided to you under the Apache License,  
+Version 2.0 (the "License"); you may not use this file  
+except in compliance with the License.  You may obtain  
+a copy of the License at</p>
+ 
+    <p>http://www.apache.org/licenses/LICENSE-2.0</p>
+ 
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+ 
+<h2><a name="types">Data Types</a></h2>
+
+<h3 class="typedecl"><a name="type-base64_binary">base64_binary()</a></h3>
+<p><tt>base64_binary() = &lt;&lt;_:64, _:_*8&gt;&gt;</tt></p>
+
+
+<h3 class="typedecl"><a name="type-get_header_fun">get_header_fun()</a></h3>
+<p><tt>get_header_fun() = fun((<a href="#type-header_name">header_name()</a>) -&gt; <a href="#type-header_value">header_value()</a>)</tt></p>
+
+
+<h3 class="typedecl"><a name="type-header_fun">header_fun()</a></h3>
+<p><tt>header_fun() = fun((<a href="#type-header_name">header_name()</a>) -&gt; <a href="#type-header_value">header_value()</a>)</tt></p>
+<p>  -type rsa_public_key() :: public_key:rsa_public_key().</p>
+
+<h3 class="typedecl"><a name="type-header_name">header_name()</a></h3>
+<p><tt>header_name() = binary()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-header_value">header_value()</a></h3>
+<p><tt>header_value() = binary() | undefined</tt></p>
+
+
+<h3 class="typedecl"><a name="type-http_body">http_body()</a></h3>
+<p><tt>http_body() = binary() | pid()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-http_method">http_method()</a></h3>
+<p><tt>http_method() = binary()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-http_path">http_path()</a></h3>
+<p><tt>http_path() = binary()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-public_key_data">public_key_data()</a></h3>
+<p><tt>public_key_data() = {cert, <a href="#type-base64_binary">base64_binary()</a>} | {key, <a href="#type-base64_binary">base64_binary()</a>} | <a href="#type-base64_binary">base64_binary()</a></tt></p>
+
+
+<h3 class="typedecl"><a name="type-sha_hash64">sha_hash64()</a></h3>
+<p><tt>sha_hash64() = binary()</tt></p>
+
+
+<h3 class="typedecl"><a name="type-signing_algorithm">signing_algorithm()</a></h3>
+<p><tt>signing_algorithm() = &lt;&lt;_:32&gt;&gt;</tt></p>
+
+
+<h3 class="typedecl"><a name="type-signing_version">signing_version()</a></h3>
+<p><tt>signing_version() = &lt;&lt;_:24&gt;&gt;</tt></p>
+
+
+<h3 class="typedecl"><a name="type-user_id">user_id()</a></h3>
+<p><tt>user_id() = binary()</tt></p>
+
+
+<h2><a name="index">Function Index</a></h2>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#accepted_signing_algorithm-1">accepted_signing_algorithm/1</a></td><td>Is the signing algorithm valid?
+  of {unknown_algorithm, Algorithm}.</td></tr>
+<tr><td valign="top"><a href="#accepted_signing_version-1">accepted_signing_version/1</a></td><td>Is the signing version acceptable for chef request.</td></tr>
+<tr><td valign="top"><a href="#authenticate_user_request-6">authenticate_user_request/6</a></td><td>Determine if a request is valid.</td></tr>
+<tr><td valign="top"><a href="#default_signing_algorithm-0">default_signing_algorithm/0</a></td><td>Return the default signing algorithm.</td></tr>
+<tr><td valign="top"><a href="#default_signing_version-0">default_signing_version/0</a></td><td>Return the default signing version.</td></tr>
+<tr><td valign="top"><a href="#extract_pem_encoded_public_key-1">extract_pem_encoded_public_key/1</a></td><td>Given PEM X509 certificate as a binary, return the RSA public key
+  in PEM format.</td></tr>
+<tr><td valign="top"><a href="#extract_private_key-1">extract_private_key/1</a></td><td></td></tr>
+<tr><td valign="top"><a href="#extract_public_key-1">extract_public_key/1</a></td><td></td></tr>
+<tr><td valign="top"><a href="#extract_public_or_private_key-1">extract_public_or_private_key/1</a></td><td>Given PEM content as binary, return either an RSA public or private key record (or
+  error tuple).</td></tr>
+<tr><td valign="top"><a href="#hash_file-1">hash_file/1</a></td><td>Base 64 encoded SHA1 of contents of <code>F</code>, which must be the pid of a file.</td></tr>
+<tr><td valign="top"><a href="#hash_string-1">hash_string/1</a></td><td>Base 64 encoded SHA1 of <code>Str</code></td></tr>
+<tr><td valign="top"><a href="#sign_request-5">sign_request/5</a></td><td>Sign an HTTP request without a body (primarily GET).</td></tr>
+<tr><td valign="top"><a href="#sign_request-6">sign_request/6</a></td><td></td></tr>
+<tr><td valign="top"><a href="#sign_request-8">sign_request/8</a></td><td>Sign an HTTP request so it can be sent to a Chef server.</td></tr>
+<tr><td valign="top"><a href="#validate_headers-2">validate_headers/2</a></td><td>Validate that all required headers are present.</td></tr>
+</table>
+
+<h2><a name="functions">Function Details</a></h2>
+
+<h3 class="function"><a name="accepted_signing_algorithm-1">accepted_signing_algorithm/1</a></h3>
+<div class="spec">
+<p><tt>accepted_signing_algorithm(Algorithm::binary()) -&gt; boolean()</tt><br></p>
+</div><p>Is the signing algorithm valid?
+  of {unknown_algorithm, Algorithm}</p>
+
+<h3 class="function"><a name="accepted_signing_version-1">accepted_signing_version/1</a></h3>
+<div class="spec">
+<p><tt>accepted_signing_version(Version::binary()) -&gt; boolean()</tt><br></p>
+</div><p>Is the signing version acceptable for chef request.  Returns true if so, else false.</p>
+
+<h3 class="function"><a name="authenticate_user_request-6">authenticate_user_request/6</a></h3>
+<div class="spec">
+<p><tt>authenticate_user_request(GetHeader::<a href="#type-get_header_fun">get_header_fun()</a>, Method::<a href="#type-http_method">http_method()</a>, Path::<a href="#type-http_path">http_path()</a>, Body::<a href="#type-http_body">http_body()</a>, PublicKey::<a href="#type-public_key_data">public_key_data()</a> | <a href="#type-rsa_public_key">rsa_public_key()</a>, TimeSkew::<a href="#type-time_skew">time_skew()</a>) -&gt; {name, <a href="#type-user_id">user_id()</a>} | {no_authn, Reason::term()}</tt><br></p>
+</div><p><p>Determine if a request is valid</p>
+ 
+  <p>The <code>GetHeader</code> argument is a fun that closes over the request  
+headers and can be called to obtain the value of a header.  It  
+should either return the value of the header as binary or  
+'undefined'.</p>
+ 
+  <p>A request signed with a timestamp more than <code>TimeSkew</code> seconds from  
+now will not be authenticated.</p>
+ 
+  <code>PublicKey</code> is a binary containing an RSA public key in PEM format.
+ </p>
+
+<h3 class="function"><a name="default_signing_algorithm-0">default_signing_algorithm/0</a></h3>
+<div class="spec">
+<p><tt>default_signing_algorithm() -&gt; <a href="#type-signing_algorithm">signing_algorithm()</a></tt><br></p>
+</div><p>Return the default signing algorithm</p>
+
+<h3 class="function"><a name="default_signing_version-0">default_signing_version/0</a></h3>
+<div class="spec">
+<p><tt>default_signing_version() -&gt; <a href="#type-signing_version">signing_version()</a></tt><br></p>
+</div><p>Return the default signing version</p>
+
+<h3 class="function"><a name="extract_pem_encoded_public_key-1">extract_pem_encoded_public_key/1</a></h3>
+<div class="spec">
+<p><tt>extract_pem_encoded_public_key(RawCert::binary()) -&gt; binary() | {error, bad_key}</tt><br></p>
+</div><p>Given PEM X509 certificate as a binary, return the RSA public key
+  in PEM format. If the argument is not a certificate, bad_key will be returned.</p>
+
+<h3 class="function"><a name="extract_private_key-1">extract_private_key/1</a></h3>
+<div class="spec">
+<p><tt>extract_private_key(RawKey::binary()) -&gt; #'RSAPrivateKey'{} | {error, bad_key}</tt><br></p>
+</div>
+
+<h3 class="function"><a name="extract_public_key-1">extract_public_key/1</a></h3>
+<div class="spec">
+<p><tt>extract_public_key(RawKey::binary()) -&gt; #'RSAPublicKey'{} | {error, bad_key}</tt><br></p>
+</div>
+
+<h3 class="function"><a name="extract_public_or_private_key-1">extract_public_or_private_key/1</a></h3>
+<div class="spec">
+<p><tt>extract_public_or_private_key(RawKey::binary()) -&gt; #'RSAPublicKey'{} | #'RSAPrivateKey'{} | {error, bad_key}</tt><br></p>
+</div><p>Given PEM content as binary, return either an RSA public or private key record (or
+  error tuple). The PEM can contain an RSA public key in PKCS1, SPKI (X509), or an X509
+  certificate wrapping an SPKI formatted key. Note that private keys will not be extracted
+  from X509 certificate data.</p>
+
+<h3 class="function"><a name="hash_file-1">hash_file/1</a></h3>
+<div class="spec">
+<p><tt>hash_file(F::pid()) -&gt; <a href="#type-sha_hash64">sha_hash64()</a></tt><br></p>
+</div><p>Base 64 encoded SHA1 of contents of <code>F</code>, which must be the pid of a file</p>
+
+<h3 class="function"><a name="hash_string-1">hash_string/1</a></h3>
+<div class="spec">
+<p><tt>hash_string(Str::string() | binary()) -&gt; <a href="#type-sha_hash64">sha_hash64()</a></tt><br></p>
+</div><p>Base 64 encoded SHA1 of <code>Str</code></p>
+
+<h3 class="function"><a name="sign_request-5">sign_request/5</a></h3>
+<div class="spec">
+<p><tt>sign_request(PrivateKey::<a href="#type-rsa_private_key">rsa_private_key()</a>, User::<a href="#type-user_id">user_id()</a>, Method::<a href="#type-http_method">http_method()</a>, Time::<a href="#type-erlang_time">erlang_time()</a> | now, Path::<a href="#type-http_path">http_path()</a>) -&gt; [{[any()], [any()]}]</tt><br></p>
+</div><p>Sign an HTTP request without a body (primarily GET)</p>
+
+<h3 class="function"><a name="sign_request-6">sign_request/6</a></h3>
+<div class="spec">
+<p><tt>sign_request(PrivateKey::<a href="#type-rsa_private_key">rsa_private_key()</a>, Body::<a href="#type-http_body">http_body()</a>, User::<a href="#type-user_id">user_id()</a>, Method::<a href="#type-http_method">http_method()</a>, Time::<a href="#type-erlang_time">erlang_time()</a> | now, Path::<a href="#type-http_path">http_path()</a>) -&gt; [{[any()], [any()]}]</tt><br></p>
+</div>
+
+<h3 class="function"><a name="sign_request-8">sign_request/8</a></h3>
+<div class="spec">
+<p><tt>sign_request(PrivateKey::<a href="#type-rsa_private_key">rsa_private_key()</a>, Body::<a href="#type-http_body">http_body()</a>, User::<a href="#type-user_id">user_id()</a>, Method::<a href="#type-http_method">http_method()</a>, Time::<a href="#type-erlang_time">erlang_time()</a> | now, Path::<a href="#type-http_path">http_path()</a>, SignAlgorithm::<a href="#type-signing_algorithm">signing_algorithm()</a>, SignVersion::<a href="#type-signing_version">signing_version()</a>) -&gt; [{[any()], [any()]}]</tt><br></p>
+</div><p><p>Sign an HTTP request so it can be sent to a Chef server.</p>
+ 
+  <p>Returns a list of header tuples that should be included in the  
+final HTTP request.</p>
+ 
+  <p>The keys are returned as strings to match with what is required by ibrowse. The values  
+are returned as binary().</p>
+ 
+  Note that the headers can't be passed directly to validate_headers which expects headers to
+  have binary keys (as returned from the ejson/jiffy parsing routines</p>
+
+<h3 class="function"><a name="validate_headers-2">validate_headers/2</a></h3>
+<div class="spec">
+<p><tt>validate_headers(GetHeader::<a href="#type-header_fun">header_fun()</a>, TimeSkew::<a href="#type-time_skew">time_skew()</a>) -&gt; [{algorithm, binary()} | {version, binary()}, ...]</tt><br></p>
+</div><p>throws <tt>{missing, [binary()]} | bad_clock | bad_sign_desc</tt></p>
+<p><p>Validate that all required headers are present</p>
+ 
+  Returns 'ok' if all required headers are present.  Otherwise, throws
+  <code>{missing, [header_name()]}</code> providing a list of the
+  missing headers in the exception.
+ </p>
+<hr>
+
+<div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<p><i>Generated by EDoc, Jul 9 2014, 00:12:49.</i></p>
+</body>
+</html>
