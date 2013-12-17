@@ -40,14 +40,14 @@ There are two app config keys you can use to control the behavior of this worker
 default is 2048. For use with the Chef authentication protocol, you should not use a key
 size less than 2048. Since key generation is a CPU intensive task, the operation is
 carried out under a timeout configured via `keygen_timeout`. If a key generation takes
-longer than this value (default is 1000 ms) then the atom `timeout` is returned instead
-of a key. Both values are read from app config on each invocation.
+longer than this value (default is 1000 ms) then the atom `keygen_timeout` is returned
+instead of a key. Both values are read from app config on each invocation.
 <a name="index"></a>
 
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#code_change-3">code_change/3</a></td><td></td></tr><tr><td valign="top"><a href="#get_key_pair-1">get_key_pair/1</a></td><td></td></tr><tr><td valign="top"><a href="#handle_call-3">handle_call/3</a></td><td></td></tr><tr><td valign="top"><a href="#handle_cast-2">handle_cast/2</a></td><td></td></tr><tr><td valign="top"><a href="#handle_info-2">handle_info/2</a></td><td></td></tr><tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr><tr><td valign="top"><a href="#start_link-0">start_link/0</a></td><td></td></tr><tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#code_change-3">code_change/3</a></td><td></td></tr><tr><td valign="top"><a href="#get_key_pair-1">get_key_pair/1</a></td><td></td></tr><tr><td valign="top"><a href="#handle_call-3">handle_call/3</a></td><td></td></tr><tr><td valign="top"><a href="#handle_cast-2">handle_cast/2</a></td><td></td></tr><tr><td valign="top"><a href="#handle_info-2">handle_info/2</a></td><td></td></tr><tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr><tr><td valign="top"><a href="#start_link-1">start_link/1</a></td><td></td></tr><tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -65,7 +65,13 @@ of a key. Both values are read from app config on each invocation.
 
 ### get_key_pair/1 ###
 
-`get_key_pair(Pid) -> any()`
+
+<pre><code>
+get_key_pair(Pid::pid()) -&gt; #key_pair{} | keygen_timeout
+</code></pre>
+
+<br></br>
+
 
 
 <a name="handle_call-3"></a>
@@ -96,11 +102,11 @@ of a key. Both values are read from app config on each invocation.
 `init(X1) -> any()`
 
 
-<a name="start_link-0"></a>
+<a name="start_link-1"></a>
 
-### start_link/0 ###
+### start_link/1 ###
 
-`start_link() -> any()`
+`start_link(Config) -> any()`
 
 
 <a name="terminate-2"></a>

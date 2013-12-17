@@ -36,6 +36,10 @@ rate less than or equal one key per `Pause` milliseconds
 * keygen_timeout: Time allowed for the external key generation command (openssl). A
 timeout atom is returned if the command takes longer than `Timeout` milliseconds.
 
+* keygen_cache_workers: The number of workers available to generate key pairs. This
+should never be larger than the number of logical CPUs. Defaults to larger of 1 and half
+the number of logical processors as reported by `erlang:system_info(logical_processors)`
+
 <a name="index"></a>
 
 ## Function Index ##
@@ -61,7 +65,7 @@ timeout atom is returned if the command takes longer than `Timeout` milliseconds
 
 
 <pre><code>
-get_key_pair() -&gt; {PublicKey::binary(), PrivateKey::binary()} | timeout
+get_key_pair() -&gt; {PublicKey::binary(), PrivateKey::binary()} | keygen_timeout
 </code></pre>
 
 <br></br>
@@ -96,7 +100,7 @@ function, not in the server.
 
 ### handle_info/2 ###
 
-`handle_info(Info, State) -> any()`
+`handle_info(Key_pair, State) -> any()`
 
 
 <a name="init-1"></a>

@@ -75,7 +75,7 @@ get_key_pair_timeout_test_() ->
      fun cleanup_cache/1,
      fun() ->
              Got = chef_keygen_cache:get_key_pair(),
-             ?assertEqual(timeout, Got)
+             ?assertEqual(keygen_timeout, Got)
      end}.
 
 get_key_pair_from_empty_cache_test_() ->
@@ -105,6 +105,24 @@ cache_fills_and_replenishes_test_() ->
              chef_keygen_cache:update_config(),
              %% verify replenish
              ?assertEqual(4, poll_cache_stat(keys, 4, 60, 10))
+     end}.
+
+cache_handles_worker_crashes_test_() ->
+    {setup,
+     fun() ->
+             start_keygen_cache(2048, 10, 50, 1000)
+     end,
+     fun cleanup_cache/1,
+     fun() ->
+             %% give time for the cache to load, grab a key
+             timer:sleep(1000),
+             chef_keygen_cache:get_key_pair(),
+             {killed, KilledWorkers} = gen_server:call(chef_keygen_cache, kill_workers_for_test),
+             %% purpose of this test is to verify recovery
+             ?assert(length(KilledWorkers) > 0),
+             %% workers have been killed, give the cache some time to recover
+             timer:sleep(1000),
+             ?assertEqual(10, poll_cache_stat(keys, 10, 60, 10))
      end}.
 
 key_size(Pub) ->

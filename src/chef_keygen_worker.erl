@@ -39,8 +39,8 @@
 %% default is 2048. For use with the Chef authentication protocol, you should not use a key
 %% size less than 2048. Since key generation is a CPU intensive task, the operation is
 %% carried out under a timeout configured via `keygen_timeout'. If a key generation takes
-%% longer than this value (default is 1000 ms) then the atom `timeout' is returned instead
-%% of a key. Both values are read from app config on each invocation.
+%% longer than this value (default is 1000 ms) then the atom `keygen_timeout' is returned
+%% instead of a key. Both values are read from app config on each invocation.
 %%
 -module(chef_keygen_worker).
 
@@ -49,7 +49,7 @@
 %% API
 -export([
          get_key_pair/1,
-         start_link/0
+         start_link/1
         ]).
 
 %% gen_server callbacks
@@ -64,36 +64,32 @@
 
 -include_lib("public_key/include/public_key.hrl").
 -include("chef_authn.hrl").
+-include("chef_keygen.hrl").
 
--define(DEFAULT_KEY_SIZE, 2048).
--define(DEFAULT_KEY_TIMEOUT, 1000).
+start_link(Config) ->
+    gen_server:start_link(?MODULE, Config, []).
 
-start_link() ->
-    gen_server:start_link(?MODULE, [], []).
-
+-spec get_key_pair(pid()) -> #key_pair{} | keygen_timeout.
 get_key_pair(Pid) ->
     gen_server:call(Pid, get_key_pair).
 
-init([]) ->
-    KeySize = envy:get(chef_authn, keygen_size, ?DEFAULT_KEY_SIZE, integer),
-    PrivKey = genrsa(KeySize),
-    State = case PrivKey of
-                timeout ->
-                    timeout;
-                _ ->
-                    PubKey = getpub(PrivKey),
-                    #key_pair{public_key = PubKey, private_key = PrivKey}
-            end,
-    {ok, State}.
+init(block) ->
+    {ok, generate_key_pair()};
+init({send_to, Pid}) ->
+    {ok, {send_to, Pid}, 0}.
 
 handle_call(get_key_pair, _From, KeyPair) ->
-    {stop, normal, KeyPair, KeyPair};
+    {stop, normal, KeyPair, sent};
 handle_call(_Request, _From, State) ->
     {reply, ignored, State}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.
 
+handle_info(timeout, {send_to, Pid}) ->
+    KeyPair = generate_key_pair(),
+    Pid ! KeyPair,
+    {stop, normal, sent};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -102,6 +98,18 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+-spec generate_key_pair() -> #key_pair{} | keygen_timeout.
+generate_key_pair() ->
+    KeySize = envy:get(chef_authn, keygen_size, ?DEFAULT_KEY_SIZE, integer),
+    PrivKey = genrsa(KeySize),
+    case PrivKey of
+        keygen_timeout ->
+            keygen_timeout;
+        _ ->
+            PubKey = getpub(PrivKey),
+            #key_pair{public_key = PubKey, private_key = PrivKey}
+    end.
 
 genrsa(Size) ->
     SSize = erlang:integer_to_list(Size),
@@ -128,5 +136,5 @@ gather_data(Port, Timeout, Acc) ->
         {Port, {data, {eol, Line}}} ->
             gather_data(Port, Timeout, ["\n", Line | Acc])
     after Timeout ->
-            timeout
+            keygen_timeout
     end.
