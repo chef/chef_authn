@@ -26,7 +26,7 @@ Example:
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr><tr><td valign="top"><a href="#new_worker-0">new_worker/0</a></td><td></td></tr><tr><td valign="top"><a href="#start_link-0">start_link/0</a></td><td></td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr><tr><td valign="top"><a href="#new_worker-0">new_worker/0</a></td><td></td></tr><tr><td valign="top"><a href="#new_worker-1">new_worker/1</a></td><td></td></tr><tr><td valign="top"><a href="#start_link-0">start_link/0</a></td><td></td></tr></table>
 
 
 <a name="functions"></a>
@@ -45,6 +45,13 @@ Example:
 ### new_worker/0 ###
 
 `new_worker() -> any()`
+
+
+<a name="new_worker-1"></a>
+
+### new_worker/1 ###
+
+`new_worker(Pid) -> any()`
 
 
 <a name="start_link-0"></a>
