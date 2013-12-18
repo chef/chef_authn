@@ -29,16 +29,18 @@ to speed up testing.
 
 * keygen_cache_size: The number of keys to store in the cache
 
-* keygen_cache_pause: Time in milliseconds to use as the gen_server timeout (idle
-server timeout) used to throttle key generation. Keys will be added to the cache at a
-rate less than or equal one key per `Pause` milliseconds
-
 * keygen_timeout: Time allowed for the external key generation command (openssl). A
 timeout atom is returned if the command takes longer than `Timeout` milliseconds.
 
 * keygen_cache_workers: The number of workers available to generate key pairs. This
 should never be larger than the number of logical CPUs. Defaults to larger of 1 and half
 the number of logical processors as reported by `erlang:system_info(logical_processors)`
+
+* keygen_cache_pause: Time in milliseconds to use as throttle on key
+generation. Workers will not be spawned more frequently than every `Pause`
+milliseconds. If `Pause` is 0, there is no throttling. Since the cache will need to
+refill on service restart, this is useful to tradeoff speed of cache fill for available
+CPU to handle requests.
 
 <a name="index"></a>
 
