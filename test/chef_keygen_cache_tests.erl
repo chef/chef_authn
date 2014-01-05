@@ -125,6 +125,17 @@ cache_handles_worker_crashes_test_() ->
              ?assertEqual(10, poll_cache_stat(keys, 10, 60, 10))
      end}.
 
+cache_handles_gen_server_timeout_test_() ->
+    {setup,
+     fun() ->
+             start_keygen_cache(1024, 1, 50, 1000)
+     end,
+     fun cleanup_cache/1,
+     fun() ->
+             application:set_env(chef_authn, keygen_timeout, 0),
+             ?assertEqual(keygen_timeout, chef_keygen_cache:get_key_pair())
+     end}.
+
 key_size(Pub) ->
     PK = chef_authn:extract_public_key(Pub),
     M = PK#'RSAPublicKey'.modulus,
