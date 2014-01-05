@@ -99,16 +99,25 @@ stop() ->
 %%
 -spec get_key_pair() -> {PublicKey :: binary(), PrivateKey :: binary() } | keygen_timeout.
 get_key_pair() ->
-    case gen_server:call(?SERVER, get_key_pair) of
+    Timeout = envy:get(chef_authn, keygen_timeout, ?DEFAULT_KEY_TIMEOUT, integer),
+    case call_with_timeout(get_key_pair, Timeout) of
         cache_empty ->
             error_logger:warning_report({chef_keygen_cache, empty}),
             %% do inline keygen in the calling process to avoid blocking the server.
             export_key_pair(make_key_pair());
         #key_pair{} = KeyPair ->
             export_key_pair(KeyPair);
-        keygen_timeout ->
-            error_logger:warning_report({chef_keygen_cache, keygen_timeout}),
+        timeout ->
+            error_logger:warning_report({chef_keygen_cache, gen_server_timeout}),
             keygen_timeout
+    end.
+
+call_with_timeout(Msg, Timeout) ->
+    try
+        gen_server:call(?SERVER, Msg, Timeout)
+    catch
+        exit:{timeout, {gen_server, call, _}} ->
+            timeout
     end.
 
 %% @doc Return a proplist of status information about the state of the key cache.
