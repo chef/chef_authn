@@ -48,6 +48,8 @@ get_key_pair_happy_path_1024_test_() ->
      end,
      fun cleanup_cache/1,
      fun() ->
+             %% FIXME: allow cache to fill
+             timer:sleep(1000),
              {Pub, Priv} = chef_keygen_cache:get_key_pair(),
              ?assertMatch(#'RSAPrivateKey'{}, chef_authn:extract_private_key(Priv)),
              ?assertMatch(#'RSAPublicKey'{}, chef_authn:extract_public_key(Pub)),
@@ -61,6 +63,8 @@ get_key_pair_happy_path_2048_test_() ->
      end,
      fun cleanup_cache/1,
      fun() ->
+             %% FIXME: allow cache to fill
+             timer:sleep(1000),
              {Pub, Priv} = chef_keygen_cache:get_key_pair(),
              ?assertMatch(#'RSAPrivateKey'{}, chef_authn:extract_private_key(Priv)),
              ?assertMatch(#'RSAPublicKey'{}, chef_authn:extract_public_key(Pub)),
@@ -87,8 +91,7 @@ get_key_pair_from_empty_cache_test_() ->
      fun() ->
              Keys = [ chef_keygen_cache:get_key_pair() || _I <- [1, 2, 3] ],
              %% remove any timeout values
-             ValidKeys = [ Key || Key = {_Pub, _Priv} <- Keys ],
-             ?assertEqual(3, length(ValidKeys))
+             ?assertEqual([keygen_timeout, keygen_timeout, keygen_timeout], Keys)
      end}.
 
 cache_fills_and_replenishes_test_() ->

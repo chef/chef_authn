@@ -20,10 +20,8 @@
 %%
 %% chef_keygen_cache is a gen_server that keeps a configurable number of RSA key pairs on
 %% hand for fast delivery. There is a throttled mechanism (to avoid hogging CPU) to
-%% replinish the key cache when it drops below the desired size. Keys are created on demand
-%% if the cache is empty. If inline key generation exceeds a configured timeout, the atom
-%% `timeout' is returned. Inline key generation happens in the calling process and does not
-%% block the server.
+%% replinish the key cache when it drops below the desired size. If you request a key when
+%% the cache is empty, the atom `keygen_timeout' is returned immediately.
 %%
 %% You can control the behavior of the key cache using the following app config keys:
 %% <ul>
@@ -31,7 +29,9 @@
 %% to speed up testing.</li>
 %% <li>keygen_cache_size: The number of keys to store in the cache</li>
 %% <li>keygen_timeout: Time allowed for the external key generation command (openssl). A
-%% timeout atom is returned if the command takes longer than `Timeout' milliseconds. </li>
+%% timeout atom is returned if the command takes longer than `Timeout' milliseconds. This
+%% value is also used to bound the time allowed for the cache gen_server to respond to key
+%% request calls</li>
 %% <li>keygen_cache_workers: The number of workers available to generate key pairs. This
 %% should never be larger than the number of logical CPUs. Defaults to larger of 1 and half
 %% the number of logical processors as reported by `erlang:system_info(logical_processors)'
@@ -91,20 +91,16 @@ stop() ->
 %% @doc Retrieve an RSA key pair from the cache.
 %%
 %% The return value is a tuple of the form `{PublicKey, PrivateKey}' where each element is a
-%% binary containing the PEM encoded key. If no keys are available in the cache, a key will
-%% be generated inline with this call. If key generation exceeds the timeout value specified
-%% in app config `{chef_authn, kegen_timeout, Timeout}', then the atom `timeout' is
-%% returned. Note that inline key generation, if needed, occurs in the process calling this
-%% function, not in the server.
-%%
+%% binary containing the PEM encoded key. If no keys are available in the cache or if the
+%% cache takes longer than the timeout value specified in app config `{chef_authn,
+%% kegen_timeout, Timeout}', then the atom `keygen_timeout' is returned.
 -spec get_key_pair() -> {PublicKey :: binary(), PrivateKey :: binary() } | keygen_timeout.
 get_key_pair() ->
     Timeout = envy:get(chef_authn, keygen_timeout, ?DEFAULT_KEY_TIMEOUT, integer),
     case call_with_timeout(get_key_pair, Timeout) of
         cache_empty ->
-            error_logger:warning_report({chef_keygen_cache, empty}),
-            %% do inline keygen in the calling process to avoid blocking the server.
-            export_key_pair(make_key_pair());
+            error_logger:error_report({chef_keygen_cache, empty}),
+            keygen_timeout;
         #key_pair{} = KeyPair ->
             export_key_pair(KeyPair);
         timeout ->
