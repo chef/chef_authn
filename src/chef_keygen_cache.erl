@@ -19,28 +19,26 @@
 %% @doc chef_keygen_cache Precreates RSA key pairs and servers them when you ask.
 %%
 %% chef_keygen_cache is a gen_server that keeps a configurable number of RSA key pairs on
-%% hand for fast delivery. There is a throttled mechanism (to avoid hogging CPU) to
-%% replinish the key cache when it drops below the desired size. Keys are created on demand
-%% if the cache is empty. If inline key generation exceeds a configured timeout, the atom
-%% `timeout' is returned. Inline key generation happens in the calling process and does not
-%% block the server.
+%% hand for fast delivery. You can configure how many workers are used to replinish the key
+%% cache when it drops below the desired size. If you request a key when the cache is empty,
+%% the atom `keygen_timeout' is returned immediately.
 %%
 %% You can control the behavior of the key cache using the following app config keys:
 %% <ul>
-%% <li>keygen_size: Size in bits of the RSA keys to generate. Defaults to 2048. Mostly used
-%% to speed up testing.</li>
 %% <li>keygen_cache_size: The number of keys to store in the cache</li>
+%% <li>keygen_start_size: The number of keys that must be available in the cache before
+%% completing startup and accepting requests. Cache startup blocks until `keygen_start_size'
+%% keys are available in the cache.</li>
 %% <li>keygen_timeout: Time allowed for the external key generation command (openssl). A
-%% timeout atom is returned if the command takes longer than `Timeout' milliseconds. </li>
+%% timeout atom is returned if the command takes longer than `Timeout' milliseconds. This
+%% value is also used to bound the time allowed for the cache gen_server to respond to key
+%% request calls</li>
 %% <li>keygen_cache_workers: The number of workers available to generate key pairs. This
 %% should never be larger than the number of logical CPUs. Defaults to larger of 1 and half
 %% the number of logical processors as reported by `erlang:system_info(logical_processors)'
 %% </li>
-%% <li>keygen_cache_pause: Time in milliseconds to use as throttle on key
-%% generation. Workers will not be spawned more frequently than every `Pause'
-%% milliseconds. If `Pause' is 0, there is no throttling. Since the cache will need to
-%% refill on service restart, this is useful to tradeoff speed of cache fill for available
-%% CPU to handle requests.</li>
+%% <li>keygen_size: Size in bits of the RSA keys to generate. Defaults to 2048. Mostly used
+%% to speed up testing.</li>
 %% </ul>
 
 -module(chef_keygen_cache).
@@ -75,11 +73,8 @@
 
 -record(state, {keys = [],
                 max = ?DEFAULT_CACHE_SIZE,
-                pause = ?DEFAULT_KEYGEN_PAUSE,
                 avail_workers = 1,
-                inflight = [],
-                last_refill,
-                timer
+                inflight = []
                }).
 
 start_link() ->
@@ -91,24 +86,29 @@ stop() ->
 %% @doc Retrieve an RSA key pair from the cache.
 %%
 %% The return value is a tuple of the form `{PublicKey, PrivateKey}' where each element is a
-%% binary containing the PEM encoded key. If no keys are available in the cache, a key will
-%% be generated inline with this call. If key generation exceeds the timeout value specified
-%% in app config `{chef_authn, kegen_timeout, Timeout}', then the atom `timeout' is
-%% returned. Note that inline key generation, if needed, occurs in the process calling this
-%% function, not in the server.
-%%
+%% binary containing the PEM encoded key. If no keys are available in the cache or if the
+%% cache takes longer than the timeout value specified in app config `{chef_authn,
+%% kegen_timeout, Timeout}', then the atom `keygen_timeout' is returned.
 -spec get_key_pair() -> {PublicKey :: binary(), PrivateKey :: binary() } | keygen_timeout.
 get_key_pair() ->
-    case gen_server:call(?SERVER, get_key_pair) of
+    Timeout = envy:get(chef_authn, keygen_timeout, ?DEFAULT_KEY_TIMEOUT, integer),
+    case call_with_timeout(get_key_pair, Timeout) of
         cache_empty ->
-            error_logger:warning_report({chef_keygen_cache, empty}),
-            %% do inline keygen in the calling process to avoid blocking the server.
-            export_key_pair(make_key_pair());
+            error_logger:error_report({chef_keygen_cache, empty}),
+            keygen_timeout;
         #key_pair{} = KeyPair ->
             export_key_pair(KeyPair);
-        keygen_timeout ->
-            error_logger:warning_report({chef_keygen_cache, keygen_timeout}),
+        timeout ->
+            error_logger:warning_report({chef_keygen_cache, gen_server_timeout}),
             keygen_timeout
+    end.
+
+call_with_timeout(Msg, Timeout) ->
+    try
+        gen_server:call(?SERVER, Msg, Timeout)
+    catch
+        exit:{timeout, {gen_server, call, _}} ->
+            timeout
     end.
 
 %% @doc Return a proplist of status information about the state of the key cache.
@@ -116,22 +116,48 @@ get_key_pair() ->
 status() ->
     gen_server:call(?SERVER, status).
 
-%% @doc Instruct the cache to reread app config values. This can be used if you want to
-%% modify the cache size or cache pause values in a running cache.
+%% @doc Instruct the cache to reread app config values.
 -spec update_config() -> ok.
 update_config() ->
     gen_server:call(?SERVER, update_config).
 
 init([]) ->
-    State = process_config(#state{keys = []}),
-    {ok, async_refill(State)}.
+    {StartSize, State} = process_config(#state{keys = []}),
+
+    {ok, StartState} = receive_key_loop(StartSize, async_refill(State)),
+    {ok, StartState}.
+
+receive_key_loop(0, State) ->
+    {ok, State};
+receive_key_loop(N, #state{keys = Keys} = State) ->
+    receive
+        #key_pair{} = KeyPair ->
+            NewState = State#state{keys = [KeyPair | Keys]},
+            receive_key_loop(N - 1, NewState);
+        keygen_timeout ->
+            receive_key_loop(N, State);
+        {'DOWN', _MRef, process, Pid, Reason} ->
+            NewState = handle_worker_down(Pid, Reason, State),
+            receive_key_loop(N, NewState)
+    end.
 
 process_config(State) ->
+    StartSize0 = envy:get(chef_authn, keygen_start_size, ?DEFAULT_START_SIZE, integer),
     Max = envy:get(chef_authn, keygen_cache_size, ?DEFAULT_CACHE_SIZE, integer),
-    Pause = envy:get(chef_authn, keygen_cache_pause, ?DEFAULT_KEYGEN_PAUSE, integer),
+    StartSize = normalize_start_size(StartSize0, Max),
     Workers = envy:get(chef_authn, keygen_cache_workers, default_worker_count(), integer),
-    error_logger:info_msg("chef_keygen_cache configured size:~p pause:~p avail_workers:~p", [Max, Pause, Workers]),
-    State#state{max = Max, pause = Pause, avail_workers = Workers}.
+    error_logger:info_msg("chef_keygen_cache configured size:~p start_size:~p avail_workers:~p",
+                          [Max, StartSize, Workers]),
+    {StartSize, State#state{max = Max, avail_workers = Workers}}.
+
+normalize_start_size(StartSize, Max) when StartSize >= 0, StartSize =< Max ->
+    StartSize;
+normalize_start_size(StartSize, Max) ->
+    Reason = {invalid_config,
+              {chef_authn, [{keygen_start_size, StartSize},
+                            {keygen_cache_size, Max}]}},
+    error_logger:error_report(Reason),
+    erlang:error(Reason).
 
 %% If not configured, default to allowing up to half of available cores to be used for
 %% keygen workers.
@@ -146,12 +172,12 @@ handle_call(get_key_pair, _From, #state{keys = [KeyPair|Rest]} = State) ->
 handle_call(get_key_pair, _From, #state{keys = []} = State) ->
     {reply, cache_empty, async_refill(State)};
 handle_call(update_config, _From, State) ->
-    NewState = process_config(State),
+    {_StartSize, NewState} = process_config(State),
     {reply, ok, NewState};
 handle_call(status, _From, State) ->
-    #state{keys = Keys, max = Max, pause = Pause,
+    #state{keys = Keys, max = Max,
            avail_workers = Avail, inflight = Inflight} = State,
-    Ans = [{keys, length(Keys)}, {max, Max}, {pause, Pause},
+    Ans = [{keys, length(Keys)}, {max, Max},
            {inflight, Inflight}, {avail_workers, Avail}],
     {reply, Ans, State};
 handle_call(stop, _From, State) ->
@@ -165,30 +191,20 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-handle_info(keygen_timeout, #state{pause = Pause} = State) ->
+handle_info(keygen_timeout, State) ->
     error_logger:warning_report({chef_keygen_cache, keygen_timeout}),
-    {noreply, async_refill(State), Pause};
+    {noreply, State};
 handle_info(#key_pair{} = KeyPair,
             #state{keys = Keys,
                    max = Max} = State) when length(Keys) < Max ->
     %% with the guard, we ignore key addition messages if we're full
     %% updating avail_workers handled by receiving 'DOWN' from monitor
-    error_logger:info_report({chef_keygen_cache, received_key}),
     NewKeys = [KeyPair | Keys],
     NewState = State#state{keys = NewKeys},
-    {noreply, async_refill(NewState)};
-handle_info(timeout, State) ->
-    {noreply, async_refill(State)};
-handle_info({'DOWN', _MRef, process, Pid, Reason},
-            #state{avail_workers = Avail, inflight = Inflight} = State) ->
-    {RemovedCount, NewInflight} = lists:foldl(
-                                    fun(ThePid, {0, Acc}) when ThePid =:= Pid ->
-                                            log_non_normal(Pid, Reason),
-                                            {1, Acc};
-                                       (APid, {X, Acc}) ->
-                                            {X, [APid | Acc]}
-                                    end, {0, []}, Inflight),
-    {noreply, State#state{avail_workers = Avail + RemovedCount, inflight = NewInflight}};
+    {noreply, NewState};
+handle_info({'DOWN', _MRef, process, Pid, Reason}, State) ->
+    NewState = handle_worker_down(Pid, Reason, State),
+    {noreply, NewState};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -198,15 +214,26 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% If WorkerPid is in our inflight list, remove it from inflight and increment available
+%% worker count. Log reason if worker died abnormally. If WorkerPid is not in inflight list,
+%% ignore it.
+handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail,
+                                             inflight = Inflight} = State) ->
+    %% We'll either remove 1 or 0
+    {RemovedCount, NewInflight} = lists:foldl(
+                                    fun(APid, {0, Acc}) when WorkerPid =:= APid ->
+                                            log_non_normal(WorkerPid, Reason),
+                                            %% remove APid from inflight list
+                                            {1, Acc};
+                                       (APid, {X, Acc}) ->
+                                            {X, [APid | Acc]}
+                                    end, {0, []}, Inflight),
+    State1 = State#state{avail_workers = Avail + RemovedCount,
+                         inflight = NewInflight},
+    async_refill(State1).
 
 async_refill(State) ->
-    State1 = schedule_timeout(State),
-    case should_run(State1) of
-        true ->
-            async_refill_in(State1);
-        false ->
-            State1
-    end.
+    async_refill_in(State).
 
 async_refill_in(#state{avail_workers = 0} = State) ->
     State;
@@ -230,42 +257,12 @@ async_refill_in(#state{avail_workers = N,
                    || {ok, Pid} <- Workers ],
     OKCount = length(NewInflight),
     State#state{avail_workers = N - OKCount,
-                inflight = NewInflight ++ Inflight,
-                last_refill = os:timestamp()}.
-
-schedule_timeout(#state{pause = Pause, timer = undefined} = State) ->
-    TRef = erlang:send_after(Pause, self(), timeout),
-    State#state{timer = TRef};
-schedule_timeout(#state{pause = Pause, timer = Timer} = State) ->
-    case erlang:read_timer(Timer) of
-        false ->
-            TRef = erlang:send_after(Pause, self(), timeout),
-            State#state{timer = TRef};
-        _ ->
-            State
-    end.
-
-make_key_pair() ->
-    {ok, Pid} = chef_keygen_worker_sup:new_worker(block),
-    chef_keygen_worker:get_key_pair(Pid).
+                inflight = NewInflight ++ Inflight}.
 
 export_key_pair(#key_pair{public_key = Pub, private_key = Priv}) ->
-    {Pub, Priv};
-export_key_pair(keygen_timeout) ->
-    keygen_timeout.
+    {Pub, Priv}.
 
 log_non_normal(_Pid, normal) ->
     ok;
 log_non_normal(Pid, Reason) ->
     error_logger:error_report({chef_keygen_cache, worker_crash, Pid, Reason}).
-
-%% Don't spawn works more frequently than Pause ms.
-should_run(#state{last_refill = undefined}) ->
-    true;
-should_run(#state{pause = 0}) ->
-    true;
-should_run(#state{last_refill = LastRefill, pause = Pause}) ->
-    PauseMicros = Pause * 1000,
-    Now = os:timestamp(),
-    timer:now_diff(Now, LastRefill) > PauseMicros.
-
