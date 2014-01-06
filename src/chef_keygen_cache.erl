@@ -81,7 +81,6 @@
                 pause = ?DEFAULT_KEYGEN_PAUSE,
                 avail_workers = 1,
                 inflight = [],
-                last_refill,
                 timer
                }).
 
@@ -247,12 +246,7 @@ handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail,
 
 async_refill(State) ->
     State1 = schedule_timeout(State),
-    case should_run(State1) of
-        true ->
-            async_refill_in(State1);
-        false ->
-            State1
-    end.
+    async_refill_in(State1).
 
 async_refill_in(#state{avail_workers = 0} = State) ->
     State;
@@ -276,8 +270,7 @@ async_refill_in(#state{avail_workers = N,
                    || {ok, Pid} <- Workers ],
     OKCount = length(NewInflight),
     State#state{avail_workers = N - OKCount,
-                inflight = NewInflight ++ Inflight,
-                last_refill = os:timestamp()}.
+                inflight = NewInflight ++ Inflight}.
 
 schedule_timeout(#state{pause = Pause, timer = undefined} = State) ->
     TRef = erlang:send_after(Pause, self(), timeout),
@@ -298,14 +291,3 @@ log_non_normal(_Pid, normal) ->
     ok;
 log_non_normal(Pid, Reason) ->
     error_logger:error_report({chef_keygen_cache, worker_crash, Pid, Reason}).
-
-%% Don't spawn works more frequently than Pause ms.
-should_run(#state{last_refill = undefined}) ->
-    true;
-should_run(#state{pause = 0}) ->
-    true;
-should_run(#state{last_refill = LastRefill, pause = Pause}) ->
-    PauseMicros = Pause * 1000,
-    Now = os:timestamp(),
-    timer:now_diff(Now, LastRefill) > PauseMicros.
-
