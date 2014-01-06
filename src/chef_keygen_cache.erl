@@ -141,12 +141,12 @@ receive_key_loop(N, #state{keys = Keys} = State) ->
     receive
         #key_pair{} = KeyPair ->
             NewState = State#state{keys = [KeyPair | Keys]},
-            receive_key_loop(N - 1, async_refill(NewState));
+            receive_key_loop(N - 1, NewState);
         keygen_timeout ->
-            receive_key_loop(N, async_refill(State));
+            receive_key_loop(N, State);
         {'DOWN', _MRef, process, Pid, Reason} ->
             NewState = handle_worker_down(Pid, Reason, State),
-            receive_key_loop(N, NewState);
+            receive_key_loop(N, async_refill(NewState));
         timeout ->
             receive_key_loop(N, async_refill(State))
     end.
@@ -204,7 +204,7 @@ handle_cast(_Request, State) ->
 
 handle_info(keygen_timeout, #state{pause = Pause} = State) ->
     error_logger:warning_report({chef_keygen_cache, keygen_timeout}),
-    {noreply, async_refill(State), Pause};
+    {noreply, State, Pause};
 handle_info(#key_pair{} = KeyPair,
             #state{keys = Keys,
                    max = Max} = State) when length(Keys) < Max ->
@@ -213,12 +213,12 @@ handle_info(#key_pair{} = KeyPair,
     error_logger:info_report({chef_keygen_cache, received_key}),
     NewKeys = [KeyPair | Keys],
     NewState = State#state{keys = NewKeys},
-    {noreply, async_refill(NewState)};
+    {noreply, NewState};
 handle_info(timeout, State) ->
     {noreply, async_refill(State)};
 handle_info({'DOWN', _MRef, process, Pid, Reason}, State) ->
     NewState = handle_worker_down(Pid, Reason, State),
-    {noreply, NewState};
+    {noreply, async_refill(NewState)};
 handle_info(_Info, State) ->
     {noreply, State}.
 
