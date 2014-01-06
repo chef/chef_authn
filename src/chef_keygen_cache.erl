@@ -19,14 +19,12 @@
 %% @doc chef_keygen_cache Precreates RSA key pairs and servers them when you ask.
 %%
 %% chef_keygen_cache is a gen_server that keeps a configurable number of RSA key pairs on
-%% hand for fast delivery. There is a throttled mechanism (to avoid hogging CPU) to
-%% replinish the key cache when it drops below the desired size. If you request a key when
-%% the cache is empty, the atom `keygen_timeout' is returned immediately.
+%% hand for fast delivery. You can configure how many workers are used to replinish the key
+%% cache when it drops below the desired size. If you request a key when the cache is empty,
+%% the atom `keygen_timeout' is returned immediately.
 %%
 %% You can control the behavior of the key cache using the following app config keys:
 %% <ul>
-%% <li>keygen_size: Size in bits of the RSA keys to generate. Defaults to 2048. Mostly used
-%% to speed up testing.</li>
 %% <li>keygen_cache_size: The number of keys to store in the cache</li>
 %% <li>keygen_start_size: The number of keys that must be available in the cache before
 %% completing startup and accepting requests. Cache startup blocks until `keygen_start_size'
@@ -39,6 +37,8 @@
 %% should never be larger than the number of logical CPUs. Defaults to larger of 1 and half
 %% the number of logical processors as reported by `erlang:system_info(logical_processors)'
 %% </li>
+%% <li>keygen_size: Size in bits of the RSA keys to generate. Defaults to 2048. Mostly used
+%% to speed up testing.</li>
 %% </ul>
 
 -module(chef_keygen_cache).

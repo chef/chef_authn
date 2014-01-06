@@ -15,32 +15,30 @@ __Behaviours:__ [`gen_server`](gen_server.md).
 
 
 chef_keygen_cache is a gen_server that keeps a configurable number of RSA key pairs on
-hand for fast delivery. There is a throttled mechanism (to avoid hogging CPU) to
-replinish the key cache when it drops below the desired size. Keys are created on demand
-if the cache is empty. If inline key generation exceeds a configured timeout, the atom
-`timeout` is returned. Inline key generation happens in the calling process and does not
-block the server.
+hand for fast delivery. You can configure how many workers are used to replinish the key
+cache when it drops below the desired size. If you request a key when the cache is empty,
+the atom `keygen_timeout` is returned immediately.
 
 
 You can control the behavior of the key cache using the following app config keys:
 
-* keygen_size: Size in bits of the RSA keys to generate. Defaults to 2048. Mostly used
-to speed up testing.
-
 * keygen_cache_size: The number of keys to store in the cache
 
+* keygen_start_size: The number of keys that must be available in the cache before
+completing startup and accepting requests. Cache startup blocks until `keygen_start_size`
+keys are available in the cache.
+
 * keygen_timeout: Time allowed for the external key generation command (openssl). A
-timeout atom is returned if the command takes longer than `Timeout` milliseconds.
+timeout atom is returned if the command takes longer than `Timeout` milliseconds. This
+value is also used to bound the time allowed for the cache gen_server to respond to key
+request calls
 
 * keygen_cache_workers: The number of workers available to generate key pairs. This
 should never be larger than the number of logical CPUs. Defaults to larger of 1 and half
 the number of logical processors as reported by `erlang:system_info(logical_processors)`
 
-* keygen_cache_pause: Time in milliseconds to use as throttle on key
-generation. Workers will not be spawned more frequently than every `Pause`
-milliseconds. If `Pause` is 0, there is no throttling. Since the cache will need to
-refill on service restart, this is useful to tradeoff speed of cache fill for available
-CPU to handle requests.
+* keygen_size: Size in bits of the RSA keys to generate. Defaults to 2048. Mostly used
+to speed up testing.
 
 <a name="index"></a>
 
@@ -78,12 +76,9 @@ Retrieve an RSA key pair from the cache.
 
 
 The return value is a tuple of the form `{PublicKey, PrivateKey}` where each element is a
-binary containing the PEM encoded key. If no keys are available in the cache, a key will
-be generated inline with this call. If key generation exceeds the timeout value specified
-in app config `{chef_authn, kegen_timeout, Timeout}`, then the atom `timeout` is
-returned. Note that inline key generation, if needed, occurs in the process calling this
-function, not in the server.
-
+binary containing the PEM encoded key. If no keys are available in the cache or if the
+cache takes longer than the timeout value specified in app config `{chef_authn,
+kegen_timeout, Timeout}`, then the atom `keygen_timeout` is returned.
 <a name="handle_call-3"></a>
 
 ### handle_call/3 ###
@@ -158,5 +153,4 @@ update_config() -&gt; ok
 <br></br>
 
 
-Instruct the cache to reread app config values. This can be used if you want to
-modify the cache size or cache pause values in a running cache.
+Instruct the cache to reread app config values.
