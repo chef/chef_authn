@@ -39,11 +39,6 @@
 %% should never be larger than the number of logical CPUs. Defaults to larger of 1 and half
 %% the number of logical processors as reported by `erlang:system_info(logical_processors)'
 %% </li>
-%% <li>keygen_cache_pause: Time in milliseconds to use as throttle on key
-%% generation. Workers will not be spawned more frequently than every `Pause'
-%% milliseconds. If `Pause' is 0, there is no throttling. Since the cache will need to
-%% refill on service restart, this is useful to tradeoff speed of cache fill for available
-%% CPU to handle requests.</li>
 %% </ul>
 
 -module(chef_keygen_cache).
@@ -78,10 +73,8 @@
 
 -record(state, {keys = [],
                 max = ?DEFAULT_CACHE_SIZE,
-                pause = ?DEFAULT_KEYGEN_PAUSE,
                 avail_workers = 1,
-                inflight = [],
-                timer
+                inflight = []
                }).
 
 start_link() ->
@@ -123,8 +116,7 @@ call_with_timeout(Msg, Timeout) ->
 status() ->
     gen_server:call(?SERVER, status).
 
-%% @doc Instruct the cache to reread app config values. This can be used if you want to
-%% modify the cache size or cache pause values in a running cache.
+%% @doc Instruct the cache to reread app config values.
 -spec update_config() -> ok.
 update_config() ->
     gen_server:call(?SERVER, update_config).
@@ -146,20 +138,17 @@ receive_key_loop(N, #state{keys = Keys} = State) ->
             receive_key_loop(N, State);
         {'DOWN', _MRef, process, Pid, Reason} ->
             NewState = handle_worker_down(Pid, Reason, State),
-            receive_key_loop(N, async_refill(NewState));
-        timeout ->
-            receive_key_loop(N, async_refill(State))
+            receive_key_loop(N, async_refill(NewState))
     end.
 
 process_config(State) ->
     StartSize0 = envy:get(chef_authn, keygen_start_size, 0, integer),
     Max = envy:get(chef_authn, keygen_cache_size, ?DEFAULT_CACHE_SIZE, integer),
     StartSize = normalize_start_size(StartSize0, Max),
-    Pause = envy:get(chef_authn, keygen_cache_pause, ?DEFAULT_KEYGEN_PAUSE, integer),
     Workers = envy:get(chef_authn, keygen_cache_workers, default_worker_count(), integer),
-    error_logger:info_msg("chef_keygen_cache configured size:~p pause:~p avail_workers:~p start_size:~p",
-                          [Max, Pause, Workers, StartSize]),
-    {StartSize, State#state{max = Max, pause = Pause, avail_workers = Workers}}.
+    error_logger:info_msg("chef_keygen_cache configured size:~p start_size:~p avail_workers:~p",
+                          [Max, StartSize, Workers]),
+    {StartSize, State#state{max = Max, avail_workers = Workers}}.
 
 normalize_start_size(StartSize, Max) when StartSize >= 0, StartSize =< Max ->
     StartSize;
@@ -186,9 +175,9 @@ handle_call(update_config, _From, State) ->
     {_StartSize, NewState} = process_config(State),
     {reply, ok, NewState};
 handle_call(status, _From, State) ->
-    #state{keys = Keys, max = Max, pause = Pause,
+    #state{keys = Keys, max = Max,
            avail_workers = Avail, inflight = Inflight} = State,
-    Ans = [{keys, length(Keys)}, {max, Max}, {pause, Pause},
+    Ans = [{keys, length(Keys)}, {max, Max},
            {inflight, Inflight}, {avail_workers, Avail}],
     {reply, Ans, State};
 handle_call(stop, _From, State) ->
@@ -202,9 +191,9 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-handle_info(keygen_timeout, #state{pause = Pause} = State) ->
+handle_info(keygen_timeout, State) ->
     error_logger:warning_report({chef_keygen_cache, keygen_timeout}),
-    {noreply, State, Pause};
+    {noreply, State};
 handle_info(#key_pair{} = KeyPair,
             #state{keys = Keys,
                    max = Max} = State) when length(Keys) < Max ->
@@ -214,8 +203,6 @@ handle_info(#key_pair{} = KeyPair,
     NewKeys = [KeyPair | Keys],
     NewState = State#state{keys = NewKeys},
     {noreply, NewState};
-handle_info(timeout, State) ->
-    {noreply, async_refill(State)};
 handle_info({'DOWN', _MRef, process, Pid, Reason}, State) ->
     NewState = handle_worker_down(Pid, Reason, State),
     {noreply, async_refill(NewState)};
@@ -245,8 +232,7 @@ handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail,
     State#state{avail_workers = Avail + RemovedCount, inflight = NewInflight}.
 
 async_refill(State) ->
-    State1 = schedule_timeout(State),
-    async_refill_in(State1).
+    async_refill_in(State).
 
 async_refill_in(#state{avail_workers = 0} = State) ->
     State;
@@ -271,18 +257,6 @@ async_refill_in(#state{avail_workers = N,
     OKCount = length(NewInflight),
     State#state{avail_workers = N - OKCount,
                 inflight = NewInflight ++ Inflight}.
-
-schedule_timeout(#state{pause = Pause, timer = undefined} = State) ->
-    TRef = erlang:send_after(Pause, self(), timeout),
-    State#state{timer = TRef};
-schedule_timeout(#state{pause = Pause, timer = Timer} = State) ->
-    case erlang:read_timer(Timer) of
-        false ->
-            TRef = erlang:send_after(Pause, self(), timeout),
-            State#state{timer = TRef};
-        _ ->
-            State
-    end.
 
 export_key_pair(#key_pair{public_key = Pub, private_key = Priv}) ->
     {Pub, Priv}.
