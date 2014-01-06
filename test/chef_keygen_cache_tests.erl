@@ -20,10 +20,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
 
-start_keygen_cache(KeySize, CacheSize, Pause, GenTimeout) ->
+start_keygen_cache(KeySize, CacheSize, GenTimeout) ->
     application:set_env(chef_authn, keygen_size, KeySize),
     application:set_env(chef_authn, keygen_cache_size, CacheSize),
-    application:set_env(chef_authn, keygen_cache_pause, Pause),
     application:set_env(chef_authn, keygen_timeout, GenTimeout),
     ensure_worker_sup(),
     {ok, CachePid} = chef_keygen_cache:start_link(),
@@ -42,7 +41,6 @@ cleanup_cache(_) ->
     application:unset_env(chef_authn, keygen_start_size),
     application:unset_env(chef_authn, keygen_size),
     application:unset_env(chef_authn, keygen_cache_size),
-    application:unset_env(chef_authn, keygen_cache_pause),
     application:unset_env(chef_authn, keygen_timeout),
     ok.
 
@@ -50,7 +48,7 @@ get_key_pair_happy_path_1024_test_() ->
     {setup,
      fun() ->
              application:set_env(chef_authn, keygen_start_size, 1),
-             start_keygen_cache(1024, 2, 100, 1000)
+             start_keygen_cache(1024, 2, 1000)
      end,
      fun cleanup_cache/1,
      fun() ->
@@ -64,7 +62,7 @@ get_key_pair_happy_path_2048_test_() ->
     {setup,
      fun() ->
              application:set_env(chef_authn, keygen_start_size, 1),
-             start_keygen_cache(2048, 1, 100, 2000)
+             start_keygen_cache(2048, 1, 2000)
      end,
      fun cleanup_cache/1,
      fun() ->
@@ -77,7 +75,7 @@ get_key_pair_happy_path_2048_test_() ->
 get_key_pair_timeout_test_() ->
     {setup,
      fun() ->
-             start_keygen_cache(2048, 2, 100, 50)
+             start_keygen_cache(2048, 2, 50)
      end,
      fun cleanup_cache/1,
      fun() ->
@@ -88,7 +86,7 @@ get_key_pair_timeout_test_() ->
 get_key_pair_from_empty_cache_test_() ->
     {setup,
      fun() ->
-             start_keygen_cache(1024, 0, 10000, 500)
+             start_keygen_cache(1024, 0, 500)
      end,
      fun cleanup_cache/1,
      fun() ->
@@ -101,7 +99,7 @@ cache_fills_and_replenishes_test_() ->
     {setup,
      fun() ->
              application:set_env(chef_authn, keygen_start_size, 3),
-             start_keygen_cache(1024, 3, 50, 500)
+             start_keygen_cache(1024, 3, 500)
      end,
      fun cleanup_cache/1,
      fun() ->
@@ -117,7 +115,7 @@ cache_fills_and_replenishes_test_() ->
 cache_handles_gen_server_timeout_test_() ->
     {setup,
      fun() ->
-             start_keygen_cache(1024, 1, 50, 1000)
+             start_keygen_cache(1024, 1, 1000)
      end,
      fun cleanup_cache/1,
      fun() ->
@@ -166,7 +164,7 @@ cache_disallows_invalid_config_test_() ->
 cache_handles_worker_crashes_test_() ->
     {setup,
      fun() ->
-             start_keygen_cache(2048, 10, 50, 1000)
+             start_keygen_cache(2048, 10, 1000)
      end,
      fun cleanup_cache/1,
      fun() ->
@@ -178,11 +176,11 @@ cache_handles_worker_crashes_test_() ->
              ?assertEqual(10, poll_cache_stat(keys, 10, 60, 10))
      end}.
 
-cache_handles_worker_crashes_with_zero_pause_test_() ->
+cache_handles_worker_crashes_with_one_worker_test_() ->
     {setup,
      fun() ->
              application:set_env(chef_authn, keygen_cache_workers, 1),
-             start_keygen_cache(2048, 3, 0, 1000),
+             start_keygen_cache(2048, 3, 1000),
              {killed, KilledWorkers} = gen_server:call(chef_keygen_cache, kill_workers_for_test),
              ?assert(length(KilledWorkers) == 1),
              ok
@@ -197,7 +195,7 @@ cache_handles_worker_timeouts_on_start_test_() ->
     {setup,
      fun() ->
              application:set_env(chef_authn, keygen_start_size, 10),
-             start_keygen_cache(2048, 10, 100, 500),
+             start_keygen_cache(2048, 10, 500),
              ok
      end,
      fun cleanup_cache/1,
@@ -209,7 +207,7 @@ cache_handles_worker_timeouts_while_running_test_() ->
     {setup,
      fun() ->
              application:set_env(chef_authn, keygen_start_size, 0),
-             start_keygen_cache(2048, 10, 100, 500),
+             start_keygen_cache(2048, 10, 500),
              ok
      end,
      fun cleanup_cache/1,
