@@ -138,7 +138,7 @@ receive_key_loop(N, #state{keys = Keys} = State) ->
             receive_key_loop(N, State);
         {'DOWN', _MRef, process, Pid, Reason} ->
             NewState = handle_worker_down(Pid, Reason, State),
-            receive_key_loop(N, async_refill(NewState))
+            receive_key_loop(N, NewState)
     end.
 
 process_config(State) ->
@@ -205,7 +205,7 @@ handle_info(#key_pair{} = KeyPair,
     {noreply, NewState};
 handle_info({'DOWN', _MRef, process, Pid, Reason}, State) ->
     NewState = handle_worker_down(Pid, Reason, State),
-    {noreply, async_refill(NewState)};
+    {noreply, NewState};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -229,7 +229,9 @@ handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail,
                                        (APid, {X, Acc}) ->
                                             {X, [APid | Acc]}
                                     end, {0, []}, Inflight),
-    State#state{avail_workers = Avail + RemovedCount, inflight = NewInflight}.
+    State1 = State#state{avail_workers = Avail + RemovedCount,
+                         inflight = NewInflight},
+    async_refill(State1).
 
 async_refill(State) ->
     async_refill_in(State).
