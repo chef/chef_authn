@@ -74,7 +74,8 @@
 -record(state, {keys = [],
                 max = ?DEFAULT_CACHE_SIZE,
                 avail_workers = 1,
-                inflight = []
+                inflight = [],
+                start_size = ?DEFAULT_START_SIZE
                }).
 
 start_link() ->
@@ -122,9 +123,8 @@ update_config() ->
     gen_server:call(?SERVER, update_config).
 
 init([]) ->
-    {StartSize, State} = process_config(#state{keys = []}),
-
-    {ok, StartState} = receive_key_loop(StartSize, async_refill(State)),
+    State = process_config(#state{}),
+    {ok, StartState} = receive_key_loop(State#state.start_size, async_refill(State)),
     {ok, StartState}.
 
 receive_key_loop(0, State) ->
@@ -146,9 +146,10 @@ process_config(State) ->
     Max = envy:get(chef_authn, keygen_cache_size, ?DEFAULT_CACHE_SIZE, integer),
     StartSize = normalize_start_size(StartSize0, Max),
     Workers = envy:get(chef_authn, keygen_cache_workers, default_worker_count(), integer),
+    %% We log the configured worker count, but set the state value based on what's inflight.
     error_logger:info_msg("chef_keygen_cache configured size:~p start_size:~p avail_workers:~p",
                           [Max, StartSize, Workers]),
-    {StartSize, State#state{max = Max, avail_workers = Workers}}.
+    State#state{max = Max, avail_workers = Workers, start_size = StartSize}.
 
 normalize_start_size(StartSize, Max) when StartSize >= 0, StartSize =< Max ->
     StartSize;
@@ -172,13 +173,13 @@ handle_call(get_key_pair, _From, #state{keys = [KeyPair|Rest]} = State) ->
 handle_call(get_key_pair, _From, #state{keys = []} = State) ->
     {reply, cache_empty, async_refill(State)};
 handle_call(update_config, _From, State) ->
-    {_StartSize, NewState} = process_config(State),
-    {reply, ok, NewState};
+    {reply, ok, process_config(State)};
 handle_call(status, _From, State) ->
-    #state{keys = Keys, max = Max,
+    #state{keys = Keys, max = Max, start_size = StartSize,
            avail_workers = Avail, inflight = Inflight} = State,
     Ans = [{keys, length(Keys)}, {max, Max},
-           {inflight, Inflight}, {avail_workers, Avail}],
+           {inflight, Inflight}, {avail_workers, Avail},
+           {start_size, StartSize}],
     {reply, Ans, State};
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
