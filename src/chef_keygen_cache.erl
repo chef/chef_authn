@@ -126,6 +126,8 @@ update_config() ->
 init([]) ->
     State = process_config(#state{}),
     {ok, StartState} = receive_key_loop(State#state.start_size, async_refill(State)),
+    error_logger:info_msg("chef_keygen_cache starting with ~p keys in cache~n",
+                          [length(StartState#state.keys)]),
     {ok, StartState}.
 
 receive_key_loop(0, State) ->
@@ -133,6 +135,7 @@ receive_key_loop(0, State) ->
 receive_key_loop(N, #state{keys = Keys} = State) ->
     receive
         #key_pair{} = KeyPair ->
+            log_start_progress(N, State),
             NewState = State#state{keys = [KeyPair | Keys]},
             receive_key_loop(N - 1, NewState);
         keygen_timeout ->
@@ -140,6 +143,17 @@ receive_key_loop(N, #state{keys = Keys} = State) ->
         {'DOWN', _MRef, process, Pid, Reason} ->
             NewState = handle_worker_down(Pid, Reason, State),
             receive_key_loop(N, NewState)
+    end.
+
+log_start_progress(N, #state{start_size = StartSize}) ->
+    KeyCount = StartSize - N,
+    Pct = (KeyCount * 100) div StartSize,
+    case Pct rem 10 of
+        0 ->
+            Fmt = "chef_keygen_cache pre-filling: ~p% (~p/~p)~n",
+            error_logger:info_msg(Fmt, [Pct, KeyCount, StartSize]);
+        _ ->
+            ok
     end.
 
 process_config(#state{inflight = Inflight} = State) ->
