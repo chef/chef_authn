@@ -73,6 +73,7 @@
 
 -record(state, {keys = [],
                 max = ?DEFAULT_CACHE_SIZE,
+                max_workers = 1,
                 avail_workers = 1,
                 inflight = [],
                 start_size = ?DEFAULT_START_SIZE
@@ -141,15 +142,19 @@ receive_key_loop(N, #state{keys = Keys} = State) ->
             receive_key_loop(N, NewState)
     end.
 
-process_config(State) ->
+process_config(#state{inflight = Inflight} = State) ->
     StartSize0 = envy:get(chef_authn, keygen_start_size, ?DEFAULT_START_SIZE, integer),
     Max = envy:get(chef_authn, keygen_cache_size, ?DEFAULT_CACHE_SIZE, integer),
     StartSize = normalize_start_size(StartSize0, Max),
     Workers = envy:get(chef_authn, keygen_cache_workers, default_worker_count(), integer),
     %% We log the configured worker count, but set the state value based on what's inflight.
-    error_logger:info_msg("chef_keygen_cache configured size:~p start_size:~p avail_workers:~p",
+    error_logger:info_msg("chef_keygen_cache configured size:~p start_size:~p max_workers:~p",
                           [Max, StartSize, Workers]),
-    State#state{max = Max, avail_workers = Workers, start_size = StartSize}.
+    %% If we are adjusting config on a live server and downgrading workers, take care not to
+    %% set avail < 0.
+    AvailWorkers = max(0, Workers - length(Inflight)),
+    State#state{max = Max, max_workers = Workers,
+                avail_workers = AvailWorkers, start_size = StartSize}.
 
 normalize_start_size(StartSize, Max) when StartSize >= 0, StartSize =< Max ->
     StartSize;
@@ -175,9 +180,9 @@ handle_call(get_key_pair, _From, #state{keys = []} = State) ->
 handle_call(update_config, _From, State) ->
     {reply, ok, process_config(State)};
 handle_call(status, _From, State) ->
-    #state{keys = Keys, max = Max, start_size = StartSize,
+    #state{keys = Keys, max = Max, max_workers = Workers, start_size = StartSize,
            avail_workers = Avail, inflight = Inflight} = State,
-    Ans = [{keys, length(Keys)}, {max, Max},
+    Ans = [{keys, length(Keys)}, {max, Max}, {max_workers, Workers},
            {inflight, Inflight}, {avail_workers, Avail},
            {start_size, StartSize}],
     {reply, Ans, State};
@@ -218,7 +223,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% If WorkerPid is in our inflight list, remove it from inflight and increment available
 %% worker count. Log reason if worker died abnormally. If WorkerPid is not in inflight list,
 %% ignore it.
-handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail,
+handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail, max_workers = MaxWorkers,
                                              inflight = Inflight} = State) ->
     %% We'll either remove 1 or 0
     {RemovedCount, NewInflight} = lists:foldl(
@@ -229,7 +234,7 @@ handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail,
                                        (APid, {X, Acc}) ->
                                             {X, [APid | Acc]}
                                     end, {0, []}, Inflight),
-    State1 = State#state{avail_workers = Avail + RemovedCount,
+    State1 = State#state{avail_workers = min(Avail + RemovedCount, MaxWorkers),
                          inflight = NewInflight},
     async_refill(State1).
 
