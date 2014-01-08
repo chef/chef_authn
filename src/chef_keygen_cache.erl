@@ -142,7 +142,7 @@ receive_key_loop(N, #state{keys = Keys} = State) ->
     end.
 
 process_config(State) ->
-    StartSize0 = envy:get(chef_authn, keygen_start_size, 0, integer),
+    StartSize0 = envy:get(chef_authn, keygen_start_size, ?DEFAULT_START_SIZE, integer),
     Max = envy:get(chef_authn, keygen_cache_size, ?DEFAULT_CACHE_SIZE, integer),
     StartSize = normalize_start_size(StartSize0, Max),
     Workers = envy:get(chef_authn, keygen_cache_workers, default_worker_count(), integer),
@@ -199,7 +199,6 @@ handle_info(#key_pair{} = KeyPair,
                    max = Max} = State) when length(Keys) < Max ->
     %% with the guard, we ignore key addition messages if we're full
     %% updating avail_workers handled by receiving 'DOWN' from monitor
-    error_logger:info_report({chef_keygen_cache, received_key}),
     NewKeys = [KeyPair | Keys],
     NewState = State#state{keys = NewKeys},
     {noreply, NewState};
