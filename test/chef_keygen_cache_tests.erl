@@ -220,15 +220,7 @@ cache_handles_worker_timeouts_while_running_test_() ->
 key_size(Pub) ->
     PK = chef_authn:extract_public_key(Pub),
     M = PK#'RSAPublicKey'.modulus,
-    Bytes = erlang:size(erlang:term_to_binary(M)),
-    %% basically we only are dealing with 1024 or 2048 key sizes for
-    %% now.
-    case Bytes bsr 7 of
-        1 ->
-            1024;
-        2 ->
-            2048
-    end.
+    bit_size(binary:encode_unsigned(M)).
 
 poll_cache_stat(_Key, _Expect, _Delay, 0) ->
     erlang:error({poll_cache_state, reached_max_retries});
