@@ -38,6 +38,7 @@
          extract_public_or_private_key/1,
          extract_private_key/1,
          extract_public_key/1,
+         extract_pem_encoded_public_key/1,
          hash_string/1,
          hash_file/1,
          sign_request/5,
@@ -108,6 +109,7 @@ process_key({'Certificate', _Der, _} = CertEntry) ->
     {0, KeyDer} = Spki#'SubjectPublicKeyInfo'.subjectPublicKey,
     public_key:der_decode('RSAPublicKey', KeyDer).
 
+
 %% @doc Given PEM content as binary, return either an RSA public or private key record (or
 %% error tuple). The PEM can contain an RSA public key in PKCS1, SPKI (X509), or an X509
 %% certificate wrapping an SPKI formatted key. Note that private keys will not be extracted
@@ -141,6 +143,22 @@ extract_private_key(RawKey) ->
         _ ->
             {error, bad_key}
     end.
+
+%% @doc Given PEM X509 certificate as a binary, return the RSA public key
+%% in PEM format. If the argument is not a certificate, bad_key will be returned.
+-spec extract_pem_encoded_public_key(binary()) -> binary() | {error, bad_key}.
+extract_pem_encoded_public_key( <<"-----BEGIN CERTIFICATE", _Bin/binary>> = RawCert) ->
+    try
+        DecodedPublicKey = extract_public_key(RawCert),
+        EncodedEntry = public_key:pem_entry_encode('SubjectPublicKeyInfo', DecodedPublicKey),
+        public_key:pem_encode([EncodedEntry])
+    catch
+        _:_ ->
+            {error, bad_key}
+    end;
+extract_pem_encoded_public_key(_) ->
+    {error, bad_key}.
+
 
 -spec(hash_string(string()|binary()) -> sha_hash64()).
 %% @doc Base 64 encoded SHA1 of `Str'
