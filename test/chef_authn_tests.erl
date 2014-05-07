@@ -534,6 +534,49 @@ decode_public_key_spki_test() ->
     Coded = public_key:encrypt_public(<<"open sesame">>, PubKey),
     ?assertEqual(true, is_binary(Coded)).
 
+extract_pem_encoded_public_key_test_() ->
+    [{"CERTIFICATE",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/example_cert.pem"),
+              Key = chef_authn:extract_pem_encoded_public_key(Pem),
+              ?assertMatch(<<"-----BEGIN PUBLIC KEY",_Bin/binary>>, Key)
+      end},
+     {"PUBLIC KEY",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/spki_public.pem"),
+              Key = chef_authn:extract_pem_encoded_public_key(Pem),
+              ?assertEqual({error, bad_key}, Key)
+      end},
+     {"RSA PUBLIC KEY",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/webui_pub.pem"),
+              Key = chef_authn:extract_pem_encoded_public_key(Pem),
+              ?assertEqual({error, bad_key}, Key)
+      end},
+     {"RSA PRIVATE KEY",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/private_key"),
+              Key = chef_authn:extract_pem_encoded_public_key(Pem),
+              ?assertEqual({error, bad_key}, Key)
+      end},
+     {"invalid cert returns error tuple", generator,
+      fun() ->
+
+              {ok, Pem} = file:read_file("../test/example_cert.pem"),
+              Pem2 = re:replace(Pem, "D", "0", [{return, binary}]),
+              {ok, Priv} = file:read_file("../test/private_key"),
+              BadKeys = [Priv, Pem2, <<"">>, <<"abc">>,
+                         term_to_binary([123, {x, x}])],
+              [ ?_assertEqual({error, bad_key},
+                              chef_authn:extract_pem_encoded_public_key(K))
+
+                || K <- BadKeys ]
+      end}
+
+    ].
+
+
+
 extract_public_or_private_key_test_() ->
     [{"RSA PUBLIC KEY",
       fun() ->
@@ -651,4 +694,5 @@ hash_file_test() ->
     ContentHash = chef_authn:hash_string(Bin),
     ?assert(is_binary(FileHash)),
     ?assertEqual(ContentHash, FileHash).
-    
+
+
