@@ -106,6 +106,8 @@ generate_key_pair() ->
     case PrivKey of
         keygen_timeout ->
             keygen_timeout;
+        {keygen_error, _} = Result->
+            Result;
         _ ->
             PubKey = getpub(PrivKey),
             #key_pair{public_key = PubKey, private_key = PrivKey}
@@ -113,28 +115,63 @@ generate_key_pair() ->
 
 genrsa(Size) ->
     SSize = erlang:integer_to_list(Size),
-    Cmd = "openssl genrsa " ++ SSize ++ " 2>/dev/null",
-    Port = erlang:open_port({spawn, Cmd}, [{line, 256}, eof]),
+    OpenSsl = chef_keygen_worker_sup:get_openssl(),
+    Cmd = OpenSsl ++ " genrsa " ++ SSize ++ " 2>/dev/null",
+    Port = erlang:open_port({spawn, Cmd}, [{line, 256}, eof, exit_status]),
     gather_data(Port).
 
 getpub(Priv) ->
-    #'RSAPrivateKey'{modulus = Modulus, publicExponent = PubExp} = 
+    #'RSAPrivateKey'{modulus = Modulus, publicExponent = PubExp} =
         chef_authn:extract_private_key(Priv),
     PubKey = #'RSAPublicKey'{modulus = Modulus, publicExponent = PubExp},
     PemEntry = public_key:pem_entry_encode('SubjectPublicKeyInfo', PubKey),
     public_key:pem_encode([PemEntry]).
-        
+
 gather_data(Port) ->
     Timeout = envy:get(chef_authn, keygen_timeout, ?DEFAULT_KEY_TIMEOUT, integer),
-    gather_data(Port, Timeout, []).
+    Data = gather_data(Port, Timeout, []),
+    maybe_gather_exit_status(Port, Timeout, Data).
 
+
+%%
+%% Read lines from the command until EOF.
+%%
 gather_data(Port, Timeout, Acc) ->
+    %% Note exit_status may be sent while we are here, but we deliberately exclude it in the filter.
+    %% Use care when modifying; a catchall term here will break things.
     receive
         {Port, eof} ->
-            ["\n"|Data] = Acc,
+            Data = maybe_strip_eol(Acc),
             erlang:iolist_to_binary(lists:reverse(Data));
         {Port, {data, {eol, Line}}} ->
             gather_data(Port, Timeout, ["\n", Line | Acc])
+    after Timeout ->
+            keygen_timeout
+    end.
+
+%% Remove trailing end of line. If the command fails, we get an empty return accumulator
+maybe_strip_eol(["\n"|Data]) ->
+    Data;
+maybe_strip_eol(Data) ->
+    Data.
+
+
+%%
+%% Exit status can arrive before or after the EOF from the command.
+%%
+%% From reading the erlang beam interpreter code, there is no process to defer the exit
+%% status message until after the pipe from the command has drained. However, we use the
+%% selective filtering of receive to ignore any exit status messages until after finishing
+%% reading the pipe.
+%%
+maybe_gather_exit_status(_Port, _Timeout, keygen_timeout=Data) ->
+    Data;
+maybe_gather_exit_status(Port, Timeout, Data) ->
+    receive
+        {Port, {exit_status, 0}} ->
+            Data;
+        {Port, {exit_status, Status}} ->
+            {keygen_error, Status}
     after Timeout ->
             keygen_timeout
     end.

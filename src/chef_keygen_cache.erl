@@ -162,7 +162,7 @@ process_config(#state{inflight = Inflight} = State) ->
     StartSize = normalize_start_size(StartSize0, Max),
     Workers = envy:get(chef_authn, keygen_cache_workers, default_worker_count(), integer),
     %% We log the configured worker count, but set the state value based on what's inflight.
-    error_logger:info_msg("chef_keygen_cache configured size:~p start_size:~p max_workers:~p",
+    error_logger:info_msg("chef_keygen_cache configured size: ~p start_size: ~p max_workers: ~p",
                           [Max, StartSize, Workers]),
     %% If we are adjusting config on a live server and downgrading workers, take care not to
     %% set avail < 0.
@@ -213,6 +213,9 @@ handle_cast(_Request, State) ->
 
 handle_info(keygen_timeout, State) ->
     error_logger:warning_report({chef_keygen_cache, keygen_timeout}),
+    {noreply, State};
+handle_info({keygen_error, Status}, State) ->
+    error_logger:warning_report({chef_keygen_cache, keygen_error, Status}),
     {noreply, State};
 handle_info(#key_pair{} = KeyPair,
             #state{keys = Keys,
