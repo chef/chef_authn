@@ -27,14 +27,19 @@
 %%
 -module(chef_keygen_worker_sup).
 
+-include_lib("kernel/include/file.hrl").
+-include("chef_keygen.hrl").
 -behaviour(supervisor).
 
 -export([
          init/1,
          new_worker/0,
          new_worker/1,
-         start_link/0
+         start_link/0,
+         get_openssl/0
         ]).
+
+-define(EXEC_FLAGS, 8#111).
 
 new_worker() ->
     new_worker(block).
@@ -48,17 +53,27 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-    verify_openssl(),
+    _ = get_openssl(),
     Worker = {chef_keygen_worker, {chef_keygen_worker, start_link, []},
               temporary, brutal_kill, worker, [chef_keygen_worker]},
     Specs = [Worker],
     Restart = {simple_one_for_one, 1, 1},
     {ok, {Restart, Specs}}.
 
-verify_openssl() ->
-    case os:find_executable("openssl") of
+get_openssl() ->
+    Default = os:find_executable(?OPENSSL_CMD),
+    case envy:get(chef_authn, openssl_path, Default, string) of
         false ->
-            erlang:error({missing_executable, "openssl"});
-        _ ->
-            ok
+            erlang:error({missing_executable, ?OPENSSL_CMD});
+        File ->
+            case file:read_file_info(File) of
+                {error, _Reason} ->
+                    erlang:error({missing_executable, File});
+                %% Check if file has execute flags set.
+                {ok, #file_info{mode=Mode}} when (Mode band ?EXEC_FLAGS) =/= 0 ->
+                    File;
+                _X ->
+                    io:fwrite("~p~n", [_X]),
+                    erlang:error({bad_executable, File})
+            end
     end.

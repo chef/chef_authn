@@ -113,28 +113,51 @@ generate_key_pair() ->
 
 genrsa(Size) ->
     SSize = erlang:integer_to_list(Size),
-    Cmd = "openssl genrsa " ++ SSize ++ " 2>/dev/null",
-    Port = erlang:open_port({spawn, Cmd}, [{line, 256}, eof]),
+    OpenSsl = chef_keygen_worker_sup:get_openssl(),
+    Cmd = OpenSsl ++ " genrsa " ++ SSize ++ " 2>/dev/null",
+    Port = erlang:open_port({spawn, Cmd}, [{line, 256}, eof, exit_status]),
     gather_data(Port).
 
 getpub(Priv) ->
-    #'RSAPrivateKey'{modulus = Modulus, publicExponent = PubExp} = 
+    #'RSAPrivateKey'{modulus = Modulus, publicExponent = PubExp} =
         chef_authn:extract_private_key(Priv),
     PubKey = #'RSAPublicKey'{modulus = Modulus, publicExponent = PubExp},
     PemEntry = public_key:pem_entry_encode('SubjectPublicKeyInfo', PubKey),
     public_key:pem_encode([PemEntry]).
-        
+
 gather_data(Port) ->
     Timeout = envy:get(chef_authn, keygen_timeout, ?DEFAULT_KEY_TIMEOUT, integer),
-    gather_data(Port, Timeout, []).
+    gather_data(Port, Timeout, [], started).
 
-gather_data(Port, Timeout, Acc) ->
+%%
+%% This is a little complicated, because:
+%% from open_port docs:
+%% 'If the eof option has been given as well, the eof message and the exit_status message
+%% appear in an unspecified order'
+%%
+%% State is one of started, has_eof, has_exit, done
+gather_data(_Port, _Timeout, Acc, done) ->
+    ["\n"|Data] = Acc,
+    erlang:iolist_to_binary(lists:reverse(Data));
+gather_data(Port, Timeout, Acc, State) ->
     receive
         {Port, eof} ->
-            ["\n"|Data] = Acc,
-            erlang:iolist_to_binary(lists:reverse(Data));
+            case State of
+                started -> gather_data(Port, Timeout, Acc, has_eof);
+                has_exit -> gather_data(Port, Timeout, Acc, done)
+            end;
+        {Port, {exit_status, 0}} -> % Status return can occur before the EOF
+            case State of
+                started -> gather_data(Port, Timeout, Acc, has_exit);
+                has_eof -> gather_data(Port, Timeout, Acc, done)
+            end;
+        {Port, {exit_status, Status}} ->
+            {keygen_error, Status};
         {Port, {data, {eol, Line}}} ->
-            gather_data(Port, Timeout, ["\n", Line | Acc])
+            gather_data(Port, Timeout, ["\n", Line | Acc], State);
+        _X ->
+            io:fwrite("Unexpected: ~p~n", [_X])
     after Timeout ->
+            io:fwrite("Timeout in state: ~p~n~p~n", [State,Acc]),
             keygen_timeout
     end.
