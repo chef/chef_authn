@@ -74,6 +74,7 @@
 -record(state, {keys = [],
                 max = ?DEFAULT_CACHE_SIZE,
                 max_workers = 1,
+                cur_max_workers = 1,
                 avail_workers = 1,
                 inflight = [],
                 start_size = ?DEFAULT_START_SIZE
@@ -160,14 +161,14 @@ process_config(#state{inflight = Inflight} = State) ->
     StartSize0 = envy:get(chef_authn, keygen_start_size, ?DEFAULT_START_SIZE, integer),
     Max = envy:get(chef_authn, keygen_cache_size, ?DEFAULT_CACHE_SIZE, integer),
     StartSize = normalize_start_size(StartSize0, Max),
-    Workers = envy:get(chef_authn, keygen_cache_workers, default_worker_count(), integer),
+    Workers = max(8, envy:get(chef_authn, keygen_cache_workers, default_worker_count(), integer) ),
     %% We log the configured worker count, but set the state value based on what's inflight.
     error_logger:info_msg("chef_keygen_cache configured size:~p start_size:~p max_workers:~p",
                           [Max, StartSize, Workers]),
     %% If we are adjusting config on a live server and downgrading workers, take care not to
     %% set avail < 0.
     AvailWorkers = max(0, Workers - length(Inflight)),
-    State#state{max = Max, max_workers = Workers,
+    State#state{max = Max, max_workers = Workers, cur_max_workers = Workers,
                 avail_workers = AvailWorkers, start_size = StartSize}.
 
 normalize_start_size(StartSize, Max) when StartSize >= 0, StartSize =< Max ->
@@ -194,9 +195,11 @@ handle_call(get_key_pair, _From, #state{keys = []} = State) ->
 handle_call(update_config, _From, State) ->
     {reply, ok, process_config(State)};
 handle_call(status, _From, State) ->
-    #state{keys = Keys, max = Max, max_workers = Workers, start_size = StartSize,
+    #state{keys = Keys, max = Max, max_workers = Workers, cur_max_workers = CurMaxWorkers,
+           start_size = StartSize,
            avail_workers = Avail, inflight = Inflight} = State,
-    Ans = [{keys, length(Keys)}, {max, Max}, {max_workers, Workers},
+    Ans = [{keys, length(Keys)}, {max, Max},
+           {max_workers, Workers}, {cur_max_workers, CurMaxWorkers},
            {inflight, Inflight}, {avail_workers, Avail},
            {start_size, StartSize}],
     {reply, Ans, State};
@@ -211,9 +214,17 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-handle_info(keygen_timeout, State) ->
+handle_info(keygen_timeout, #state{cur_max_workers= CurMaxWorkers} = State) ->
+    %% When we get a timeout, we want to immediately scale back the number of workers.
+    %% Otherwise we end up where we're timing out because things are slow under load. The
+    %% timeout terminates the process early and then restarts again, thus keeping the load
+    %% high while never actually completing.
+    %%
+    %% We'll always keep at least one worker running, to make forward progress.
+    CurMaxWorkers1 = max(1, CurMaxWorkers - 1),
     error_logger:warning_report({chef_keygen_cache, keygen_timeout}),
-    {noreply, State};
+    error_logger:info_report({chef_keygen_cache, decr_worker_count, CurMaxWorkers1}),
+    {noreply, State#state{cur_max_workers=CurMaxWorkers1} };
 handle_info(#key_pair{} = KeyPair,
             #state{keys = Keys,
                    max = Max} = State) when length(Keys) < Max ->
@@ -238,6 +249,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% worker count. Log reason if worker died abnormally. If WorkerPid is not in inflight list,
 %% ignore it.
 handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail, max_workers = MaxWorkers,
+                                             cur_max_workers = CurMaxWorkers,
                                              inflight = Inflight} = State) ->
     %% We'll either remove 1 or 0
     {RemovedCount, NewInflight} = lists:foldl(
@@ -248,8 +260,9 @@ handle_worker_down(WorkerPid, Reason, #state{avail_workers = Avail, max_workers 
                                        (APid, {X, Acc}) ->
                                             {X, [APid | Acc]}
                                     end, {0, []}, Inflight),
-    State1 = State#state{avail_workers = min(Avail + RemovedCount, MaxWorkers),
-                         inflight = NewInflight},
+    CurMaxWorkers1 = maybe_update_workers(CurMaxWorkers, RemovedCount, MaxWorkers, Reason),
+    AvailWorkers = min(Avail + RemovedCount, trunc(CurMaxWorkers1)),
+    State1 = State#state{avail_workers = AvailWorkers, cur_max_workers = CurMaxWorkers1 , inflight = NewInflight},
     async_refill(State1).
 
 async_refill(State) ->
@@ -286,3 +299,19 @@ log_non_normal(_Pid, normal) ->
     ok;
 log_non_normal(Pid, Reason) ->
     error_logger:error_report({chef_keygen_cache, worker_crash, Pid, Reason}).
+
+%% This updates the workers by a small factor on a successful completion. A recovery factor
+%% of .5 essentially requires 2x the number of sucessful completions as failures;
+%% 
+maybe_update_workers(CurMaxWorkers, RemovedCount, MaxWorkers, normal) ->
+    RecoveryScaleFactor = ?KEYGEN_RECOVERY_FACTOR,
+    case min(MaxWorkers, CurMaxWorkers + RemovedCount * RecoveryScaleFactor) of
+        CurMaxWorkers -> CurMaxWorkers;
+        CurMaxWorkers1 ->
+            %% Log change;
+            error_logger:info_report({chef_keygen_cache, incr_worker_count, CurMaxWorkers1}),
+            CurMaxWorkers1
+    end;
+maybe_update_workers(CurMaxWorkers, _, _, _) ->
+    CurMaxWorkers.
+
