@@ -106,6 +106,8 @@ generate_key_pair() ->
     case PrivKey of
         keygen_timeout ->
             keygen_timeout;
+        {keygen_error, _} = Result->
+            Result;
         _ ->
             PubKey = getpub(PrivKey),
             #key_pair{public_key = PubKey, private_key = PrivKey}
@@ -127,37 +129,47 @@ getpub(Priv) ->
 
 gather_data(Port) ->
     Timeout = envy:get(chef_authn, keygen_timeout, ?DEFAULT_KEY_TIMEOUT, integer),
-    gather_data(Port, Timeout, [], started).
+    Data = gather_data(Port, Timeout, []),
+    gather_exit_status(Port, Timeout, Data).
+
 
 %%
-%% This is a little complicated, because:
-%% from open_port docs:
-%% 'If the eof option has been given as well, the eof message and the exit_status message
-%% appear in an unspecified order'
+%% Read lines from the command until EOF.
 %%
-%% State is one of started, has_eof, has_exit, done
-gather_data(_Port, _Timeout, Acc, done) ->
-    ["\n"|Data] = Acc,
-    erlang:iolist_to_binary(lists:reverse(Data));
-gather_data(Port, Timeout, Acc, State) ->
+gather_data(Port, Timeout, Acc) ->
+    %% Note exit_status may be sent while we are here, but we deliberately exclude it in the filter.
+    %% Use care when modifying; a catchall term here will break things.
     receive
         {Port, eof} ->
-            case State of
-                started -> gather_data(Port, Timeout, Acc, has_eof);
-                has_exit -> gather_data(Port, Timeout, Acc, done)
-            end;
-        {Port, {exit_status, 0}} -> % Status return can occur before the EOF
-            case State of
-                started -> gather_data(Port, Timeout, Acc, has_exit);
-                has_eof -> gather_data(Port, Timeout, Acc, done)
-            end;
-        {Port, {exit_status, Status}} ->
-            {keygen_error, Status};
+            Data = maybe_strip_eol(Acc),
+            erlang:iolist_to_binary(lists:reverse(Data));
         {Port, {data, {eol, Line}}} ->
-            gather_data(Port, Timeout, ["\n", Line | Acc], State);
-        _X ->
-            io:fwrite("Unexpected: ~p~n", [_X])
+            gather_data(Port, Timeout, ["\n", Line | Acc])
     after Timeout ->
-            io:fwrite("Timeout in state: ~p~n~p~n", [State,Acc]),
+            keygen_timeout
+    end.
+
+%% Remove trailing end of line. If the command fails, we get an empty return accumulator
+maybe_strip_eol(["\n"|Data]) ->
+    Data;
+maybe_strip_eol(Data) ->
+    Data.
+
+
+%%
+%% Exit status can arrive before or after the EOF from the command.
+%%
+%% From reading the erlang beam interpreter code, there is no process to defer the exit
+%% status message until after the pipe from the command has drained. However, we use the
+%% selective filtering of receive to ignore any exit status messages until after finishing
+%% reading the pipe.
+%%
+gather_exit_status(Port, Timeout, Data) ->
+    receive
+        {Port, {exit_status, 0}} ->
+            Data;
+        {Port, {exit_status, Status}} ->
+            {keygen_error, Status}
+    after Timeout ->
             keygen_timeout
     end.
