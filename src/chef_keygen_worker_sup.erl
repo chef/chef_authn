@@ -32,11 +32,17 @@
 -export([
          init/1,
          new_worker/0,
+         new_worker/1,
          start_link/0
         ]).
 
 new_worker() ->
-    supervisor:start_child(?MODULE, []).
+    new_worker(block).
+
+new_worker(block) ->
+    supervisor:start_child(?MODULE, [block]);
+new_worker(Pid) when is_pid(Pid) ->
+    supervisor:start_child(?MODULE, [{send_to, Pid}]).
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
