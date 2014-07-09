@@ -1,0 +1,121 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Module chef_keygen_cache</title>
+<link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
+</head>
+<body bgcolor="white">
+<div class="navbar"><a name="#navbar_top"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<hr>
+
+<h1>Module chef_keygen_cache</h1>
+<ul class="index"><li><a href="#description">Description</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>chef_keygen_cache Precreates RSA key pairs and servers them when you ask.
+
+<p><b>Behaviours:</b> <a href="gen_server.html"><tt>gen_server</tt></a>.</p>
+
+<h2><a name="description">Description</a></h2><p>chef_keygen_cache Precreates RSA key pairs and servers them when you ask.</p>
+ 
+  <p>chef_keygen_cache is a gen_server that keeps a configurable number of RSA key pairs on
+  hand for fast delivery. You can configure how many workers are used to replinish the key
+  cache when it drops below the desired size. If you request a key when the cache is empty,
+  the atom <code>keygen_timeout</code> is returned immediately.</p>
+ 
+  You can control the behavior of the key cache using the following app config keys:
+  <ul>
+  <li>keygen_cache_size: The number of keys to store in the cache</li>
+  <li>keygen_start_size: The number of keys that must be available in the cache before
+  completing startup and accepting requests. Cache startup blocks until <code>keygen_start_size</code>
+  keys are available in the cache.</li>
+  <li>keygen_timeout: Time allowed for the external key generation command (openssl). A
+  timeout atom is returned if the command takes longer than <code>Timeout</code> milliseconds. This
+  value is also used to bound the time allowed for the cache gen_server to respond to key
+  request calls</li>
+  <li>keygen_cache_workers: The number of workers available to generate key pairs. This
+  should never be larger than the number of logical CPUs. Defaults to larger of 1 and half
+  the number of logical processors as reported by <code>erlang:system_info(logical_processors)</code>
+  </li>
+  <li>keygen_size: Size in bits of the RSA keys to generate. Defaults to 2048. Mostly used
+  to speed up testing.</li>
+  </ul>
+<h2><a name="index">Function Index</a></h2>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#code_change-3">code_change/3</a></td><td></td></tr>
+<tr><td valign="top"><a href="#get_key_pair-0">get_key_pair/0</a></td><td>Retrieve an RSA key pair from the cache.</td></tr>
+<tr><td valign="top"><a href="#handle_call-3">handle_call/3</a></td><td></td></tr>
+<tr><td valign="top"><a href="#handle_cast-2">handle_cast/2</a></td><td></td></tr>
+<tr><td valign="top"><a href="#handle_info-2">handle_info/2</a></td><td></td></tr>
+<tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr>
+<tr><td valign="top"><a href="#start_link-0">start_link/0</a></td><td></td></tr>
+<tr><td valign="top"><a href="#status-0">status/0</a></td><td>Return a proplist of status information about the state of the key cache.</td></tr>
+<tr><td valign="top"><a href="#stop-0">stop/0</a></td><td></td></tr>
+<tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td></td></tr>
+<tr><td valign="top"><a href="#update_config-0">update_config/0</a></td><td>Instruct the cache to reread app config values.</td></tr>
+</table>
+
+<h2><a name="functions">Function Details</a></h2>
+
+<h3 class="function"><a name="code_change-3">code_change/3</a></h3>
+<div class="spec">
+<p><tt>code_change(OldVsn, State, Extra) -&gt; any()</tt></p>
+</div>
+
+<h3 class="function"><a name="get_key_pair-0">get_key_pair/0</a></h3>
+<div class="spec">
+<p><tt>get_key_pair() -&gt; {PublicKey::binary(), PrivateKey::binary()} | keygen_timeout</tt><br></p>
+</div><p><p>Retrieve an RSA key pair from the cache.</p>
+ 
+  The return value is a tuple of the form <code>{PublicKey, PrivateKey}</code> where each element is a
+  binary containing the PEM encoded key. If no keys are available in the cache or if the
+  cache takes longer than the timeout value specified in app config <code>{chef_authn,
+  kegen_timeout, Timeout}</code>, then the atom <code>keygen_timeout</code> is returned.</p>
+
+<h3 class="function"><a name="handle_call-3">handle_call/3</a></h3>
+<div class="spec">
+<p><tt>handle_call(Request, From, State) -&gt; any()</tt></p>
+</div>
+
+<h3 class="function"><a name="handle_cast-2">handle_cast/2</a></h3>
+<div class="spec">
+<p><tt>handle_cast(Request, State) -&gt; any()</tt></p>
+</div>
+
+<h3 class="function"><a name="handle_info-2">handle_info/2</a></h3>
+<div class="spec">
+<p><tt>handle_info(Key_pair, State) -&gt; any()</tt></p>
+</div>
+
+<h3 class="function"><a name="init-1">init/1</a></h3>
+<div class="spec">
+<p><tt>init(X1) -&gt; any()</tt></p>
+</div>
+
+<h3 class="function"><a name="start_link-0">start_link/0</a></h3>
+<div class="spec">
+<p><tt>start_link() -&gt; any()</tt></p>
+</div>
+
+<h3 class="function"><a name="status-0">status/0</a></h3>
+<div class="spec">
+<p><tt>status() -&gt; [{atom(), term()}]</tt><br></p>
+</div><p>Return a proplist of status information about the state of the key cache.</p>
+
+<h3 class="function"><a name="stop-0">stop/0</a></h3>
+<div class="spec">
+<p><tt>stop() -&gt; any()</tt></p>
+</div>
+
+<h3 class="function"><a name="terminate-2">terminate/2</a></h3>
+<div class="spec">
+<p><tt>terminate(Reason, State) -&gt; any()</tt></p>
+</div>
+
+<h3 class="function"><a name="update_config-0">update_config/0</a></h3>
+<div class="spec">
+<p><tt>update_config() -&gt; ok</tt><br></p>
+</div><p>Instruct the cache to reread app config values.</p>
+<hr>
+
+<div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<p><i>Generated by EDoc, Jul 9 2014, 00:12:49.</i></p>
+</body>
+</html>

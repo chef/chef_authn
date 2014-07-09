@@ -26,3 +26,7 @@ else
 	@echo "ERROR: missing concrete.mk"
 	@echo "  run: concrete update"
 endif
+
+slow_test:
+	touch test/chef_keygen_cache_tests.erl
+	rebar eunit skip_deps=true -DSLOW_TESTS
