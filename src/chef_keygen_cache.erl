@@ -50,6 +50,7 @@
          get_key_pair/0,
          start_link/0,
          status/0,
+         status_for_json/0,
          stop/0,
          update_config/0
         ]).
@@ -118,6 +119,8 @@ call_with_timeout(Msg, Timeout) ->
 -spec status() -> [{atom(), _}].
 status() ->
     gen_server:call(?SERVER, status).
+status_for_json() ->
+    gen_server:call(?SERVER, status_for_json).
 
 %% @doc Instruct the cache to reread app config values.
 -spec update_config() -> ok.
@@ -201,6 +204,17 @@ handle_call(status, _From, State) ->
     Ans = [{keys, length(Keys)}, {max, Max},
            {max_workers, Workers}, {cur_max_workers, CurMaxWorkers},
            {inflight, Inflight}, {avail_workers, Avail},
+           {start_size, StartSize}],
+    {reply, Ans, State};
+%% This must return information in a format that can be encoded by ejson
+%% (pids in inflight aren't json friendly, for example.
+handle_call(status_for_json, _From, State) ->
+    #state{keys = Keys, max = Max, max_workers = Workers, cur_max_workers = CurMaxWorkers,
+           start_size = StartSize,
+           avail_workers = Avail, inflight = Inflight} = State,
+    Ans = [{keys, length(Keys)}, {max, Max},
+           {max_workers, Workers}, {cur_max_workers, CurMaxWorkers},
+           {inflight, length(Inflight)}, {avail_workers, Avail},
            {start_size, StartSize}],
     {reply, Ans, State};
 handle_call(stop, _From, State) ->
