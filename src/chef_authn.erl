@@ -172,7 +172,7 @@ hash_string(Str) ->
 hash_file(F) ->
     hash_file(F, crypto:hash_init(sha)).
 
--spec hash_file(file:io_device(),binary()) -> sha_hash64().
+-spec hash_file(file:io_device(), _) -> sha_hash64().
 hash_file(F, Ctx) ->
     case io:get_chars(F, "", ?BUF_SIZE) of
         eof ->
