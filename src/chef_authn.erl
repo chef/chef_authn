@@ -62,8 +62,14 @@
 -type signing_version() :: <<_:24>>.
 -type base64_binary() :: <<_:64,_:_*8>>.
 -type public_key_data() :: {cert, base64_binary()} | {key, base64_binary()} | base64_binary().
+
+-type key_desc() :: any().
+-type public_key_list() :: [{key_desc(), public_key_data() | public_key:rsa_public_key()}].
+
 -type header_fun() :: fun((header_name()) -> header_value()).
 %% -type rsa_public_key() :: public_key:rsa_public_key().
+
+
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -418,7 +424,7 @@ validate_sign_description(GetHeader) ->
                                 http_body(),
                                 public_key_data() | public_key:rsa_public_key(),
                                 time_skew()) ->
-                       {name, user_id()} | {no_authn, Reason::term()}.
+                       {name, user_id()} | {name, user_id(), key_desc()} | {no_authn, Reason::term()}.
 authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
     try
         do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
@@ -431,9 +437,9 @@ authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
                    http_method(),
                    http_path(),
                    http_body(),
-                   public_key_data() | public_key:rsa_public_key(),
+                   public_key_data() | public_key:rsa_public_key() | public_key_list(),
                    time_skew())
-                  ->  {name, user_id()}.
+                  ->  {name, user_id()} | {name, user_id(), key_desc()}.
 
 do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
     % NOTE: signing description validation and time_skew validation
@@ -446,7 +452,39 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     BodyHash = hashed_body(Body),
     Plain = canonicalize_request(BodyHash, UserId, Method, ReqTime,
                                  Path, SignAlgorithm, SignVersion),
-    verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion).
+    verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion).
+
+
+-spec verify_sig_or_sigs(binary(), binary(), binary(), binary(), binary(),
+                         [{key_desc(), public_key_data() | public_key:rsa_public_key()}], binary()) ->
+                                {name, user_id()} | {name, user_id(), key_desc()}.
+verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId,  [Head | _] = KeyData, SignVersion)
+  when is_tuple(Head) ->
+    verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion);
+verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion) ->
+    verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion).
+
+
+%% @doc Try sigs in order, returning key_id for the first one that validates correctly
+%% The key_id is an identifier meaningful to the caller. (In our case it might be a tuple {name, userorclient, id, authz_id}
+%% There are some optimization opportunities around hoisting more common stuff out of verify_sig to minimize
+%% what we are repeating each step
+%%
+-spec verify_sigs(binary(), binary(), binary(), binary(), binary(),
+                  [{key_desc(), public_key_data() | public_key:rsa_public_key()}], binary()) ->
+                         {name, user_id(), key_desc()}.
+
+verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey}], SignVersion) ->
+    {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignVersion),
+    {name, UserId, KeyId};
+verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey} | Remaining], SignVersion) ->
+    try
+        {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignVersion),
+        {name, UserId, KeyId}
+    catch
+        %% We can fail for other reasons than signature not being right; most of those aren't badmatch though.
+        error:{badmatch, _} -> verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, Remaining, SignVersion)
+    end.
 
 -spec verify_sig(binary(), binary(), binary(), binary(), binary(),
                  public_key_data() | public_key:rsa_public_key(), binary()) ->
