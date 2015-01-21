@@ -482,8 +482,8 @@ verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey} | Re
         {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignVersion),
         {name, UserId, KeyId}
     catch
-        %% We can fail for other reasons than signature not being right; most of those aren't badmatch though.
-        error:{badmatch, _} -> verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, Remaining, SignVersion)
+        error:_Any ->
+            verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, Remaining, SignVersion)
     end.
 
 -spec verify_sig(binary(), binary(), binary(), binary(), binary(),
