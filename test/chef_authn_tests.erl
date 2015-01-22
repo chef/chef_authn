@@ -22,6 +22,12 @@
 -define(request_time_erlang, {{2009, 1, 1}, {12, 0, 0}}).
 -define(user, <<"spec-user">>).
 
+-define(PRIVATE_KEYS, "clownco-org-admin.pem", "skynet-org-admin.pem", "testkey.pem"]).
+
+-define(KEYFILES, [ "example_cert.pem", "other_cert.pem", "platform_public_key_example.pem",
+                    "spki_public.pem", "webui_pub.pem" ]).
+
+
 -define(X_OPS_USERID, "spec-user").
 
 -define(X_OPS_AUTHORIZATION_LINES_V1_0,
@@ -276,6 +282,49 @@ verify_sig_v1_2_test() ->
                                        list_to_binary(?X_OPS_USERID),
                                        Public_key,
                                        <<"1.2">>)).
+
+fetch_keys(BaseDir, Filenames) ->
+    Keys = [{N,K} || {N, {ok, K}} <-  [ {Name, file:read_file(iolist_to_binary([ BaseDir, Name]))} || Name <- Filenames ] ],
+    Keys.
+
+%% [ iolist_to_binary([ BaseDir, Name]) || Name <- Filenames ]
+
+verify_sigs_v1_2_test_() ->
+    Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_2),
+    Plain = ?expected_sign_string_v12,
+    KeyList = fetch_keys("../test/", ?KEYFILES),
+    [ fun() ->
+              %% Test key in front of list
+              AuthN = chef_authn:verify_sigs(Plain, ignore, ignore,
+                                             Sig,
+                                             list_to_binary(?X_OPS_USERID),
+                                             KeyList,
+                                             <<"1.2">>),
+              ?assertEqual({name,<<"spec-user">>, "example_cert.pem"}, AuthN)
+      end,
+      fun() ->
+              %% Test key in back of list
+              KeyList2 = lists:reverse(KeyList),
+              AuthN = chef_authn:verify_sigs(Plain, ignore, ignore,
+                                             Sig,
+                                             list_to_binary(?X_OPS_USERID),
+                                             KeyList2,
+                                             <<"1.2">>),
+              ?debugVal(AuthN),
+              ?assertEqual({name,<<"spec-user">>, "example_cert.pem"}, AuthN)
+      end,
+      fun() ->
+              %% Test no key
+              [_|KeyList2] = KeyList,
+              ?assertError({badmatch, false},
+                               chef_authn:verify_sigs(Plain, ignore, ignore,
+                                                      Sig,
+                                                      list_to_binary(?X_OPS_USERID),
+                                                      KeyList2,
+                                                      <<"1.2">>))
+      end
+    ].
+
 
 decrypt_tagged_sig_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
