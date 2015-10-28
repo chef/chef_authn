@@ -123,7 +123,9 @@ process_key({'PrivateKeyInfo', _, _} = Entry) ->
     case KeyAlgorithmInfo of
         #'PrivateKeyInfo_privateKeyAlgorithm'{algorithm=?'rsaEncryption'} ->
             PrivateKey = KeyInfo#'PrivateKeyInfo'.privateKey,
-            public_key:der_decode('RSAPrivateKey', list_to_binary(PrivateKey))
+            public_key:der_decode('RSAPrivateKey', list_to_binary(PrivateKey));
+        _ ->
+            {error, bad_key}
     end.
 
 %% @doc Given PEM content as binary, return either an RSA public or private key record (or
