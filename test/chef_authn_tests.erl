@@ -655,6 +655,14 @@ extract_public_or_private_key_test_() ->
               ?assert(Key#'RSAPrivateKey'.prime1 > 0)
       end},
 
+     {"RSA PRIVATE KEY PKCS#8",
+      fun() ->
+              {ok, Pem} = file:read_file("../test/private_key_pkcs8"),
+              Key = chef_authn:extract_public_or_private_key(Pem),
+              ?assert(Key#'RSAPrivateKey'.prime1 > 0)
+      end},
+
+
      {"invalid keys return error tuple", generator,
       fun() ->
               %% mangle a key
