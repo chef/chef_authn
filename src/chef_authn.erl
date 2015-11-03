@@ -99,6 +99,7 @@ accepted_signing_version(Version) ->
 
 -spec process_key({'RSAPublicKey',  binary(), _} |
                   {'RSAPrivateKey', binary(), _} |
+                  {'PrivateKeyInfo', _, _}       |
                   {'SubjectPublicKeyInfo', _, _}) ->
                          public_key:rsa_public_key() |
                          public_key:rsa_private_key() |
@@ -115,8 +116,17 @@ process_key({'Certificate', _Der, _} = CertEntry) ->
     TbsCert = Cert#'Certificate'.tbsCertificate,
     Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
     {0, KeyDer} = Spki#'SubjectPublicKeyInfo'.subjectPublicKey,
-    public_key:der_decode('RSAPublicKey', KeyDer).
-
+    public_key:der_decode('RSAPublicKey', KeyDer);
+process_key({'PrivateKeyInfo', _, _} = Entry) ->
+    KeyInfo = public_key:pem_entry_decode(Entry),
+    KeyAlgorithmInfo = KeyInfo#'PrivateKeyInfo'.privateKeyAlgorithm,
+    case KeyAlgorithmInfo of
+        #'PrivateKeyInfo_privateKeyAlgorithm'{algorithm=?'rsaEncryption'} ->
+            PrivateKey = KeyInfo#'PrivateKeyInfo'.privateKey,
+            public_key:der_decode('RSAPrivateKey', list_to_binary(PrivateKey));
+        _ ->
+            {error, bad_key}
+    end.
 
 %% @doc Given PEM content as binary, return either an RSA public or private key record (or
 %% error tuple). The PEM can contain an RSA public key in PKCS1, SPKI (X509), or an X509
