@@ -281,7 +281,7 @@ verify_sig_v1_2_test() ->
                                        Sig,
                                        list_to_binary(?X_OPS_USERID),
                                        Public_key,
-                                       <<"1.2">>)).
+                                       {<<"sha1">>, <<"1.2">>})).
 
 fetch_keys(BaseDir, Filenames) ->
     Keys = [{N,K} || {N, {ok, K}} <-  [ {Name, file:read_file(iolist_to_binary([ BaseDir, Name]))} || Name <- Filenames ] ],
@@ -299,7 +299,7 @@ verify_sigs_v1_2_test_() ->
                                              Sig,
                                              list_to_binary(?X_OPS_USERID),
                                              KeyList,
-                                             <<"1.2">>),
+                                             {<<"sha1">>, <<"1.2">>}),
               ?assertEqual({name,<<"spec-user">>, "example_cert.pem"}, AuthN)
       end,
       fun() ->
@@ -309,7 +309,7 @@ verify_sigs_v1_2_test_() ->
                                              Sig,
                                              list_to_binary(?X_OPS_USERID),
                                              KeyList2,
-                                             <<"1.2">>),
+                                             {<<"sha1">>, <<"1.2">>}),
               ?debugVal(AuthN),
               ?assertEqual({name,<<"spec-user">>, "example_cert.pem"}, AuthN)
       end,
@@ -321,7 +321,7 @@ verify_sigs_v1_2_test_() ->
                                                       Sig,
                                                       list_to_binary(?X_OPS_USERID),
                                                       KeyList2,
-                                                      <<"1.2">>))
+                                                      {<<"sha1">>, <<"1.2">>}))
       end
     ].
 
