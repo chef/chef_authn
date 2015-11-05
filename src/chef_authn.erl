@@ -462,17 +462,17 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     BodyHash = hashed_body(Body),
     Plain = canonicalize_request(BodyHash, UserId, Method, ReqTime,
                                  Path, SignAlgorithm, SignVersion),
-    verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion).
+    verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, {SignAlgorithm, SignVersion}).
 
 
 -spec verify_sig_or_sigs(binary(), binary(), binary(), binary(), binary(),
-                         [{key_desc(), public_key_data() | public_key:rsa_public_key()}], binary()) ->
+                         [{key_desc(), public_key_data() | public_key:rsa_public_key()}], {binary(), binary()}) ->
                                 {name, user_id()} | {name, user_id(), key_desc()}.
-verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId,  [Head | _] = KeyData, SignVersion)
+verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId,  [Head | _] = KeyData, SignInfo)
   when is_tuple(Head) ->
-    verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion);
-verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion) ->
-    verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion).
+    verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignInfo);
+verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignInfo) ->
+    verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignInfo).
 
 
 %% @doc Try sigs in order, returning key_id for the first one that validates correctly
@@ -481,26 +481,26 @@ verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignV
 %% what we are repeating each step
 %%
 -spec verify_sigs(binary(), binary(), binary(), binary(), binary(),
-                  [{key_desc(), public_key_data() | public_key:rsa_public_key()}], binary()) ->
+                  [{key_desc(), public_key_data() | public_key:rsa_public_key()}], {binary(), binary()}) ->
                          {name, user_id(), key_desc()}.
 
-verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey}], SignVersion) ->
-    {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignVersion),
+verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey}], SignInfo) ->
+    {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignInfo),
     {name, UserId, KeyId};
-verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey} | Remaining], SignVersion) ->
+verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey} | Remaining], SignInfo) ->
     try
-        {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignVersion),
+        {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignInfo),
         {name, UserId, KeyId}
     catch
         error:_Any ->
-            verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, Remaining, SignVersion)
+            verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, Remaining, SignInfo)
     end.
 
 -spec verify_sig(binary(), binary(), binary(), binary(), binary(),
-                 public_key_data() | public_key:rsa_public_key(), binary()) ->
+                 public_key_data() | public_key:rsa_public_key(), {binary(), binary()}) ->
                         {name, user_id()}.
 
-verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion)
+verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, {_, SignVersion})
   when SignVersion =:= ?SIGNING_VERSION_V1_0;
        SignVersion =:= ?SIGNING_VERSION_V1_1 ->
     Plain = decrypt_sig(AuthSig, PublicKey),
@@ -510,7 +510,7 @@ verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion
     %% if the content hash is wrong.
     ContentHash = BodyHash,
     {name, UserId};
-verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, ?SIGNING_VERSION_V1_2) ->
+verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, {_, ?SIGNING_VERSION_V1_2}) ->
     true = public_key:verify(Plain, sha, base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId}.
 
