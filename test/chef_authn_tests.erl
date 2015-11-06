@@ -59,6 +59,16 @@
           "FDp0m8rzMtOdsPkO/IAgbdpHTWoh8AXmPhh8t6+PfQ=="
         ]).
 
+-define(X_OPS_AUTHORIZATION_LINES_V1_3,
+       [
+          "hWMV3mEhEeYAx0GhaSbJlwJgHa7mjxXZv4kLT0mvqbX4zTBNy3SAqBplv3ZZ",
+          "vJbSHgVU4upqerGBHghuRA9BFsDR0iys22z0ArPG1Cbw6BqMVXzyX5MKmHhr",
+          "cxjeHqvFJij+RE7hBiBxqOJ3e80Ri9lz9QmzYJe+SBO+SHTgBS+EnV6KfntR",
+          "GmYOYZ0qqyiGGpdZOjlF9PczPGD6jSYBquVmYKt77hx4gqq4w3Yy4B0naqsp",
+          "YWtomwA4CqboQhMAN9bV50Qg3u0Kc+Nn24/wzRRRbVqznb7PdxuZTnuwZHro",
+          "HPzpjLBLoowOmpInQDSHO0XFetEOyKAgKIaIRQhAWg=="
+       ]).
+
 -define(X_OPS_CONTENT_HASH, "DFteJZPVv6WKdQmMqZUQUumUyRs=").
 
 -define(expected_sign_string_v10,
@@ -87,6 +97,16 @@
                            "X-Ops-UserId:~s",
                            ["POST", ?hashed_path, ?hashed_body,
                             ?request_time_iso8601, chef_authn:hash_string(?user)]))).
+
+-define(expected_sign_string_v13,
+        iolist_to_binary(io_lib:format(
+                           "Method:~s\nHashed Path:~s\n"
+                           "X-Ops-Content-Hash:~s\n"
+                           "X-Ops-Timestamp:~s\n"
+                           "X-Ops-UserId:~s",
+                           ["POST", ?hashed_path, ?hashed_body,
+                            ?request_time_iso8601, chef_authn:hash_string(?user)]))).
+
 
 canonical_path_test_() ->
     Tests = [{<<"/">>, <<"/">>},
@@ -133,6 +153,7 @@ signing_version_test() ->
     ?assertEqual(true, chef_authn:accepted_signing_version(<<"1.1">>)),
     ?assertEqual(true, chef_authn:accepted_signing_version(<<"1.0">>)),
     ?assertEqual(true, chef_authn:accepted_signing_version(<<"1.2">>)),
+    ?assertEqual(true, chef_authn:accepted_signing_version(<<"1.3">>)),
     ?assertEqual(false, chef_authn:accepted_signing_version(1.0)),
     ?assertEqual(false, chef_authn:accepted_signing_version("1.0")).
 
@@ -282,6 +303,18 @@ verify_sig_v1_2_test() ->
                                        list_to_binary(?X_OPS_USERID),
                                        Public_key,
                                        {<<"sha1">>, <<"1.2">>})).
+
+verify_sig_v1_3_test() ->
+    Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_3),
+    Plain = ?expected_sign_string_v13,
+    {ok, Public_key} = file:read_file("test/example_cert.pem"),
+    ?assertEqual({name,<<"spec-user">>},
+                 chef_authn:verify_sig(Plain, ignore, ignore,
+                                       Sig,
+                                       list_to_binary(?X_OPS_USERID),
+                                       Public_key,
+                                       {<<"sha256">>, <<"1.3">>})).
+
 
 fetch_keys(BaseDir, Filenames) ->
     Keys = [{N,K} || {N, {ok, K}} <-  [ {Name, file:read_file(iolist_to_binary([ BaseDir, Name]))} || Name <- Filenames ] ],

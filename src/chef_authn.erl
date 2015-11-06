@@ -252,7 +252,8 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignV
                                             CanonicalUserId])).
 
 canonicalize_userid(UserId, SignVersion)  when SignVersion =:= ?SIGNING_VERSION_V1_1;
-                                               SignVersion =:= ?SIGNING_VERSION_V1_2 ->
+                                               SignVersion =:= ?SIGNING_VERSION_V1_2;
+                                               SignVersion =:= ?SIGNING_VERSION_V1_3 ->
             hash_string(UserId);
 canonicalize_userid(UserId, ?SIGNING_VERSION_V1_0) ->
             UserId.
@@ -512,7 +513,15 @@ verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, {_, SignVer
     {name, UserId};
 verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, {_, ?SIGNING_VERSION_V1_2}) ->
     true = public_key:verify(Plain, sha, base64:decode(AuthSig), decode_key_data(PublicKey)),
+    {name, UserId};
+verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey,
+           {SignAlgorithm, ?SIGNING_VERSION_V1_3}) ->
+    true = public_key:verify(Plain, openssl_algorithm_name(SignAlgorithm),
+                             base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId}.
+
+openssl_algorithm_name(<<"sha1">>) -> sha;
+openssl_algorithm_name(<<"sha256">>) -> sha256.
 
 -spec decrypt_sig(binary(), public_key:public_key_data() |
                   public_key:rsa_public_key()) -> binary().

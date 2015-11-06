@@ -27,14 +27,21 @@
 
 -define(BUF_SIZE, 16384).
 
--define(DEFAULT_SIGNING_ALGORITHM, <<"sha1">>).
+-define(SIGNING_ALGORITHM_SHA1, <<"sha1">>).
+-define(SIGNING_ALGORITHM_SHA256, <<"sha256">>).
+
+-define(DEFAULT_SIGNING_ALGORITHM, ?SIGNING_ALGORITHM_SHA1).
 
 -define(SIGNING_VERSION_V1_0, <<"1.0">>).
 -define(SIGNING_VERSION_V1_1, <<"1.1">>).
 -define(SIGNING_VERSION_V1_2, <<"1.2">>).
+-define(SIGNING_VERSION_V1_3, <<"1.3">>).
 
 %% version 1.2 incorporates the related but slightly different RSA PKCS 1.5 SHA+RSA signing method
--define(SIGNING_VERSIONS, [?SIGNING_VERSION_V1_0, ?SIGNING_VERSION_V1_1, ?SIGNING_VERSION_V1_2]).
+-define(SIGNING_VERSIONS, [?SIGNING_VERSION_V1_0,
+                           ?SIGNING_VERSION_V1_1,
+                           ?SIGNING_VERSION_V1_2,
+                           ?SIGNING_VERSION_V1_3]).
 
 -define(SIGNING_VERSION_KEY, <<"version">>).
 
