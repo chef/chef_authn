@@ -240,6 +240,32 @@ canonicalize_request_v_1_2_test() ->
                                            Algorithm, Version),
     ?assertEqual(?expected_sign_string_v12, Val2).
 
+canonicalize_request_v_1_3_sha1_test() ->
+    Algorithm = ?SIGNING_ALGORITHM_SHA1,
+    Version = <<"1.3">>,
+    Val1 = chef_authn:canonicalize_request(?hashed_body_sha1, ?user, <<"post">>, ?request_time_iso8601, ?path,
+                                           Algorithm, Version),
+    ?assertEqual(?expected_sign_string_v13_sha1, Val1),
+
+    % verify normalization
+    Val2 = chef_authn:canonicalize_request(?hashed_body_sha1, ?user, <<"post">>, ?request_time_iso8601, ?path,
+                                           Algorithm, Version),
+    ?assertEqual(?expected_sign_string_v13_sha1, Val2).
+
+canonicalize_request_v_1_3_sha256_test() ->
+    Algorithm = ?SIGNING_ALGORITHM_SHA256,
+    Version = <<"1.3">>,
+    Val1 = chef_authn:canonicalize_request(?hashed_body_sha256, ?user, <<"post">>, ?request_time_iso8601, ?path,
+                                           Algorithm, Version),
+    ?assertEqual(?expected_sign_string_v13_sha256, Val1),
+
+    % verify normalization
+    Val2 = chef_authn:canonicalize_request(?hashed_body_sha256, ?user, <<"post">>, ?request_time_iso8601, ?path,
+                                           Algorithm, Version),
+    ?assertEqual(?expected_sign_string_v13_sha256, Val2).
+
+
+
 sign_request_1_0_test() ->
     Algorithm = chef_authn:default_signing_algorithm(),
     Version = <<"1.0">>,
