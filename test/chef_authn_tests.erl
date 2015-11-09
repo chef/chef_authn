@@ -14,7 +14,7 @@
 -define(path, <<"/organizations/clownco">>).
 -define(path_with_query, <<"/organizations/clownco?a=1&b=2">>).
 -define(hashed_path_sha1, <<"YtBWDn1blGGuFIuKksdwXzHU9oE=">>).
--define(hashed_path_sha256, <<"3EsTMw/UBNY9n+q+WBWTJmeVg8hQFbdFzVWRxW4dOA=">>).
+-define(hashed_path_sha256, <<"Z3EsTMw/UBNY9n+q+WBWTJmeVg8hQFbdFzVWRxW4dOA=">>).
 
 -define(body, <<"Spec Body">>).
 -define(hashed_body_sha1, <<"DFteJZPVv6WKdQmMqZUQUumUyRs=">>).
@@ -63,25 +63,27 @@
 
 -define(X_OPS_AUTHORIZATION_LINES_V1_3_SHA1,
         [
-          "HtjhPysvmPf7mFHZ+Ze4rLMucDv4ImPxv5kdJghpVwLo9tuE6VSmbuh3tIBp",
-          "OmVH1sKOqyv6x5fkLaHq0FIYTEgcdXrN86rkFJBvExRzOuL7JHGXKIIzohc9",
-          "BZBcF2LAGv2UY33TMXLhQYIIKh/5uWYZ7QsHjadgWo5nEiFpiy5VCoMKidmr",
-          "DH7jYUZeXCFMgfsLlN6mlilc/iAGnktJwhAQPvIDgJS1cOHqFeWzaU2FRjvQ",
-          "h6AUrsvhJ6C/5uJu6h0DT4uk5w5uVameyI/Cs+0KI/XLCk27dOl4X+SqBN9D",
-          "FDp0m8rzMtOdsPkO/IAgbdpHTWoh8AXmPhh8t6+PfQ=="
+         "wVDg3X99mxxQr1Ox/KJc+zy7b/mPX/M1+jsta5Qht43UhkNq3spRqup8vP26",
+         "TT/0pSSDnJ//wlYnxrEP+izgRGO3n4rwLQNM/ePB+dOXSiOwLDJOl7yChUde",
+         "qrxX6xsaIps6+Di/DRQ1jqLBO5KHkt8Ndc6KUeyV4Dbz/O4+8VIJw0j22Sne",
+         "6kWG648yVrS/ODeHfPGw2kLa1bQ1X7uEpNpOG2l1zzgm19wXZYllnjZphcll",
+         "lItQ/00hM7BgbSJWcqu8tShXlZUv6/ScClQZmkdN3mNojgmlt1fMv2LjejD1",
+         "8I8xfPcfBKelkz4bLHsB86pMvvE+g9tC+h2EvYU2Rw=="
         ]).
 
 -define(X_OPS_AUTHORIZATION_LINES_V1_3_SHA256,
         [
-         "fCmTB4WQoaaz68Zj2k7XBp2HujnqNuq7WGERIVZy2BxYhM4t/MZu8ok3jB+W",
-         "WwvSEYlx63AT5FN6Eo5jkB0l2cdb5fc4Ex2KuNB7JVOoChz8n0WKYWURRNtu",
-         "NFq6Iy9sSNqPPMiooS43IbqGvDgw1VfHQTOAvkbsDua9mTuYW+JtDD4NRFGo",
-         "YhPKM4jOPm5GaygvGkrigSfhOUMt5W2Q1swZdBkmYFhvRbDKNH2zxrzozNOj",
-         "IZgsA8aTYKGjMndt9rJ4H6mWQVOOiE4iE57VwGfGVvFicPeTQSw8zr7/K6E3",
-         "A5G4RQcWxNRisCKQuUo6LBMwY67+Bhk9pJbZ3bD38w=="
-        ]).
+         "Zo20R014Yt3IjMCsUVbOCoctwHOHaxsC3b6dPqmk3xIZo1zmOgVbsHzL72Bt",
+         "cRAeqm/gXHRNJlo4Fbh4jTJP3IBAm+mhga6aMZhRkrVUYfnZ1oEi8f/Z9WyY",
+         "uYPD8iygCEyFj2BshWsvo+lv3EvlmYlh5cKqjqaStLtGB118vfoTAf+XqK/y",
+         "tW4Ye6yn8KddnT/mLMqKJgy8PEbr+jVdLA7wDTZd64++IleNmgK72qneMEjk",
+         "4zuU5JWYfnT3MzyKR7sCsuEvxUNn/o4u5GEuuud2oP8dJUraNNUXpJYk9Us7",
+         "yZS3bUNsFPFVP3RAQadLX9gvC4eAZadTuly0wi0Edg=="
+        ]
+       ).
 
 -define(X_OPS_CONTENT_HASH, "DFteJZPVv6WKdQmMqZUQUumUyRs=").
+-define(X_OPS_CONTENT_HASH_SHA256, "hDlKNZhIhgso3Fs0S0pZwJ0xyBWtR1RBaeHs1DrzOho=").
 
 -define(expected_sign_string_v10,
         iolist_to_binary(io_lib:format(
@@ -114,9 +116,11 @@
         iolist_to_binary(io_lib:format(
                            "Method:~s\nHashed Path:~s\n"
                            "X-Ops-Content-Hash:~s\n"
+                           "X-Ops-Sign:algorithm=~s;version=~s\n"
                            "X-Ops-Timestamp:~s\n"
                            "X-Ops-UserId:~s",
                            ["POST", ?hashed_path_sha1, ?hashed_body_sha1,
+                            ?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_3,
                             ?request_time_iso8601,
                             chef_authn:hash_string(?user,
                                                    {?SIGNING_ALGORITHM_SHA1,
@@ -126,9 +130,11 @@
         iolist_to_binary(io_lib:format(
                            "Method:~s\nHashed Path:~s\n"
                            "X-Ops-Content-Hash:~s\n"
+                           "X-Ops-Sign:algorithm=~s;version=~s\n"
                            "X-Ops-Timestamp:~s\n"
                            "X-Ops-UserId:~s",
                            ["POST", ?hashed_path_sha256, ?hashed_body_sha256,
+                            ?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3,
                             ?request_time_iso8601,
                             chef_authn:hash_string(?user,
                                                    {?SIGNING_ALGORITHM_SHA256,
@@ -302,6 +308,55 @@ sign_request_1_2_test() ->
     Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
                        ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
+
+sign_request_1_3_sha1_test() ->
+    Algorithm = <<"sha1">>,
+    Version = <<"1.3">>,
+    {ok, RawKey} = file:read_file("../test/private_key"),
+    Private_key = chef_authn:extract_private_key(RawKey),
+    AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_3_SHA1) end,
+    EXPECTED_SIGN_RESULT =
+        [
+         {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH},
+         {"X-Ops-UserId", ?X_OPS_USERID},
+         {"X-Ops-Sign", "algorithm=sha1;version=1.3"},
+         {"X-Ops-Timestamp", ?request_time_iso8601},
+         {"X-Ops-Authorization-1", AuthLine(1)},
+         {"X-Ops-Authorization-2", AuthLine(2)},
+         {"X-Ops-Authorization-3", AuthLine(3)},
+         {"X-Ops-Authorization-4", AuthLine(4)},
+         {"X-Ops-Authorization-5", AuthLine(5)},
+         {"X-Ops-Authorization-6", AuthLine(6)}
+        ],
+    Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+                       ?request_time_erlang, ?path, Algorithm, Version),
+    ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
+
+sign_request_1_3_sha256_test() ->
+    Algorithm = <<"sha256">>,
+    Version = <<"1.3">>,
+    {ok, RawKey} = file:read_file("../test/private_key"),
+    Private_key = chef_authn:extract_private_key(RawKey),
+    AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_3_SHA256) end,
+    EXPECTED_SIGN_RESULT =
+        [
+         {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH_SHA256},
+         {"X-Ops-UserId", ?X_OPS_USERID},
+         {"X-Ops-Sign", "algorithm=sha256;version=1.3"},
+         {"X-Ops-Timestamp", ?request_time_iso8601},
+         {"X-Ops-Authorization-1", AuthLine(1)},
+         {"X-Ops-Authorization-2", AuthLine(2)},
+         {"X-Ops-Authorization-3", AuthLine(3)},
+         {"X-Ops-Authorization-4", AuthLine(4)},
+         {"X-Ops-Authorization-5", AuthLine(5)},
+         {"X-Ops-Authorization-6", AuthLine(6)}
+        ],
+    Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+                       ?request_time_erlang, ?path, Algorithm, Version),
+    ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
+
+
+
 
 sign_bogus_request_test() ->
     ?assertError({missing_required_data, _},

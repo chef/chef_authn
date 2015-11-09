@@ -51,6 +51,15 @@
                                "X-Ops-Content-Hash:~s\n"
                                "X-Ops-Timestamp:~s\nX-Ops-UserId:~ts">>).
 
+%% The version 1.3 format includes the X-Ops-Sign and X-Ops-Server-API-Version
+%% headers. Thus, it will work only for Chef Server.
+-define(VERSION1_3_SIG_FORMAT, <<"Method:~s\nHashed Path:~s\n"
+                               "X-Ops-Content-Hash:~s\n"
+                               %"X-Ops-Server-API-Version:~s\n"
+                               "X-Ops-Sign:algorithm=~s;version=~s\n"
+                               "X-Ops-Timestamp:~s\n"
+                               "X-Ops-UserId:~ts">>).
+
 -define(REQUIRED_HEADERS, [<<"X-Ops-UserId">>,
                            <<"X-Ops-Timestamp">>,
                            <<"X-Ops-Sign">>,

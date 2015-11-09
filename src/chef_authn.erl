@@ -269,12 +269,25 @@ canonicalize_request(BodyHash, UserId, _Method, Time, _Path, _SignAlgorithm, _Si
          UserId =:= undefined orelse
            Time =:= undefined ->
     erlang:error({missing_required_data, {BodyHash, UserId, Time}});
-canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm, SignVersion) ->
+canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm, SignVersion)
+  when SignVersion =:= ?SIGNING_VERSION_V1_0;
+       SignVersion =:= ?SIGNING_VERSION_V1_1;
+       SignVersion =:= ?SIGNING_VERSION_V1_2 ->
     Format = ?VERSION1_SIG_FORMAT,
     CanonicalUserId = canonicalize_userid(UserId, {SignAlgorithm, SignVersion}),
     iolist_to_binary(io_lib:format(Format, [canonical_method(Method),
                                             hash_string(canonical_path(Path), {SignAlgorithm, SignVersion}),
                                             BodyHash,
+                                            Time,
+                                            CanonicalUserId]));
+canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm, SignVersion)
+  when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+    Format = ?VERSION1_3_SIG_FORMAT,
+    CanonicalUserId = canonicalize_userid(UserId, {SignAlgorithm, SignVersion}),
+    iolist_to_binary(io_lib:format(Format, [canonical_method(Method),
+                                            hash_string(canonical_path(Path), {SignAlgorithm, SignVersion}),
+                                            BodyHash,
+                                            SignAlgorithm, SignVersion,
                                             Time,
                                             CanonicalUserId])).
 
@@ -287,12 +300,14 @@ canonicalize_userid(UserId, {_, ?SIGNING_VERSION_V1_0}) ->
             UserId.
 
 -spec create_signature(binary(), public_key:rsa_private_key(),
-                       signing_version()) ->  binary().
-create_signature(SignThis, PrivateKey, SignVersion) when SignVersion =:= ?SIGNING_VERSION_V1_0;
+                       {signing_algorithm(), signing_version()}) ->  binary().
+create_signature(SignThis, PrivateKey, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
                                                          SignVersion =:= ?SIGNING_VERSION_V1_1 ->
     public_key:encrypt_private(SignThis, PrivateKey);
-create_signature(SignThis, PrivateKey, ?SIGNING_VERSION_V1_2) ->
-    public_key:sign(SignThis, sha, PrivateKey).
+create_signature(SignThis, PrivateKey, {_, ?SIGNING_VERSION_V1_2}) ->
+    public_key:sign(SignThis, sha, PrivateKey);
+create_signature(SignThis, PrivateKey, {SignAlgorithm, ?SIGNING_VERSION_V1_3}) ->
+    public_key:sign(SignThis, openssl_algorithm_name(SignAlgorithm), PrivateKey).
 
 -spec sign_request(public_key:rsa_private_key(), user_id(), http_method(),
                    erlang_time() | now, http_path()) -> [{[any()],[any()]}].
@@ -324,13 +339,22 @@ sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVers
     CTime = time_iso8601(Time),
     HashedBody = hashed_body(Body, {SignAlgorithm, SignVersion}),
     SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
-    Sig = base64:encode(create_signature(SignThis, PrivateKey, SignVersion)),
-    X_Ops_Sign = iolist_to_binary(io_lib:format("version=~s", [SignVersion])),
+    Sig = base64:encode(create_signature(SignThis, PrivateKey, {SignAlgorithm, SignVersion})),
+    X_Ops_Sign = x_ops_sign_header_value({SignAlgorithm, SignVersion}),
     headers_as_str([{"X-Ops-Content-Hash", HashedBody},
                     {"X-Ops-UserId", User},
                     {"X-Ops-Sign", X_Ops_Sign},
                     {"X-Ops-Timestamp", CTime}]
                    ++ sig_header_items(Sig)).
+
+%% @doc Return the header value for a given signature description
+-spec x_ops_sign_header_value({signing_algorithm(), signing_version()}) -> binary().
+x_ops_sign_header_value({_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
+                                               SignVersion =:= ?SIGNING_VERSION_V1_1;
+                                               SignVersion =:= ?SIGNING_VERSION_V1_2 ->
+    iolist_to_binary(io_lib:format("version=~s", [SignVersion]));
+x_ops_sign_header_value({SignAlgorithm, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+    iolist_to_binary(io_lib:format("algorithm=~s;version=~s", [SignAlgorithm, SignVersion])).
 
 %% @doc Return the time as an ISO8601 formatted string.  Accept the atom 'now'
 %% as a argument to represent the current time
