@@ -129,6 +129,23 @@
                             1
                            ]))).
 
+-define(expected_sign_string_v13_sha1_api_default,
+        iolist_to_binary(io_lib:format(
+                           "Method:~s\nHashed Path:~s\n"
+                           "X-Ops-Content-Hash:~s\n"
+                           "X-Ops-Sign:algorithm=~s;version=~s\n"
+                           "X-Ops-Timestamp:~s\n"
+                           "X-Ops-UserId:~s\n"
+                           "X-Ops-Server-API-Version:~B",
+                           ["POST", ?hashed_path_sha1, ?hashed_body_sha1,
+                            ?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_3,
+                            ?request_time_iso8601,
+                            chef_authn:hash_string(?user,
+                                                   {?SIGNING_ALGORITHM_SHA1,
+                                                    ?SIGNING_VERSION_V1_3}),
+                            0
+                           ]))).
+
 -define(expected_sign_string_v13_sha256,
         iolist_to_binary(io_lib:format(
                            "Method:~s\nHashed Path:~s\n"
@@ -256,10 +273,10 @@ canonicalize_request_v_1_3_sha1_test() ->
                                            Algorithm, Version, GetHeader),
     ?assertEqual(?expected_sign_string_v13_sha1, Val1),
 
-    % verify normalization
+    % verify that default server api version is 0
     Val2 = chef_authn:canonicalize_request(?hashed_body_sha1, ?user, <<"post">>, ?request_time_iso8601, ?path,
-                                           Algorithm, Version, GetHeader),
-    ?assertEqual(?expected_sign_string_v13_sha1, Val2).
+                                           Algorithm, Version, undefined),
+    ?assertEqual(?expected_sign_string_v13_sha1_api_default, Val2).
 
 canonicalize_request_v_1_3_sha256_test() ->
     Algorithm = ?SIGNING_ALGORITHM_SHA256,
