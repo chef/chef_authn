@@ -39,6 +39,7 @@
          extract_private_key/1,
          extract_public_key/1,
          extract_pem_encoded_public_key/1,
+         sign_request/2,
          sign_request/5,
          sign_request/6,
          sign_request/8,
@@ -70,8 +71,13 @@
 -type public_key_list() :: [{key_desc(), public_key_data() | public_key:rsa_public_key()}].
 
 -type header_fun() :: fun((header_name()) -> header_value()).
-%% -type rsa_public_key() :: public_key:rsa_public_key().
-
+-type sign_parameter() :: {private_key, public_key:rsa_private_key()} |
+                          {body, http_body()} |
+                          {user, user_id()} |
+                          {method, http_method()} |
+                          {time, erlang_time() | now} |
+                          {path, http_path()} |
+                          {get_header, header_fun()}.
 
 
 -ifdef(TEST).
@@ -256,7 +262,7 @@ hashed_body(Body, SignInfo) when is_list(Body) ->
     hashed_body(iolist_to_binary(Body), SignInfo).
 
 -spec(canonicalize_request(sha_hash64(), user_id(), http_method(), iso8601_time(),
-                           http_path(), signing_algorithm(), signing_version())
+                           http_path(), signing_algorithm(), signing_version(), header_fun())
       -> binary()).
 %% @doc Canonicalize an HTTP request into a binary that can be signed
 %% for verification.
@@ -264,12 +270,12 @@ hashed_body(Body, SignInfo) when is_list(Body) ->
 %% NOTE: this function assumes that `Time' is already in canonical
 %% form (see chef_time_utils:canonical_time/1).  Other arguments are canonicalized.
 %%
-canonicalize_request(BodyHash, UserId, _Method, Time, _Path, _SignAlgorithm, _SignVersion)
+canonicalize_request(BodyHash, UserId, _Method, Time, _Path, _SignAlgorithm, _SignVersion, _GetHeader)
   when BodyHash =:= undefined orelse
          UserId =:= undefined orelse
            Time =:= undefined ->
     erlang:error({missing_required_data, {BodyHash, UserId, Time}});
-canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm, SignVersion)
+canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm, SignVersion, _GetHeader)
   when SignVersion =:= ?SIGNING_VERSION_V1_0;
        SignVersion =:= ?SIGNING_VERSION_V1_1;
        SignVersion =:= ?SIGNING_VERSION_V1_2 ->
@@ -280,16 +286,25 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm, SignVe
                                             BodyHash,
                                             Time,
                                             CanonicalUserId]));
-canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm, SignVersion)
-  when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm,
+                     ?SIGNING_VERSION_V1_3=SignVersion, GetHeader) ->
     Format = ?VERSION1_3_SIG_FORMAT,
     CanonicalUserId = canonicalize_userid(UserId, {SignAlgorithm, SignVersion}),
+    ServerApiVersion = case GetHeader of
+        undefined -> ?DEFAULT_SERVER_API_VERSION;
+        HeaderFun -> case HeaderFun(<<"X-Ops-Server-API-Version">>) of
+                         undefined -> ?DEFAULT_SERVER_API_VERSION;
+                         Version -> binary_to_integer(Version)
+                     end
+    end,
     iolist_to_binary(io_lib:format(Format, [canonical_method(Method),
                                             hash_string(canonical_path(Path), {SignAlgorithm, SignVersion}),
                                             BodyHash,
                                             SignAlgorithm, SignVersion,
                                             Time,
-                                            CanonicalUserId])).
+                                            CanonicalUserId,
+                                            ServerApiVersion])).
+
 
 canonicalize_userid(UserId, {_, SignVersion}=SignInfo)
   when SignVersion =:= ?SIGNING_VERSION_V1_1;
@@ -312,9 +327,12 @@ create_signature(SignThis, PrivateKey, {SignAlgorithm, ?SIGNING_VERSION_V1_3}) -
 -spec sign_request(public_key:rsa_private_key(), user_id(), http_method(),
                    erlang_time() | now, http_path()) -> [{[any()],[any()]}].
 %% @doc Sign an HTTP request without a body (primarily GET)
+%% @deprecated Use sign_request/2 instead.
 sign_request(PrivateKey, User, Method, Time, Path) ->
     sign_request(PrivateKey, <<"">>, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
+%% @doc Sign an HTTP request without a body (primarily GET)
+%% @deprecated Use sign_request/2 instead.
 -spec sign_request(public_key:rsa_private_key(), http_body(), user_id(),
                    http_method(), erlang_time() | now, http_path()) ->
                           [{[any()],[any()]}].
@@ -331,16 +349,41 @@ sign_request(PrivateKey, Body, User, Method, Time, Path) ->
 %%
 %% Note that the headers can't be passed directly to validate_headers which expects headers to
 %% have binary keys (as returned from the ejson/jiffy parsing routines
+%%
+%% @deprecated Use sign_request/2 instead.
 -spec sign_request(public_key:rsa_private_key(), http_body(), user_id(),
                    http_method(), erlang_time() | now, http_path(),
                    signing_algorithm(), signing_version()) ->
                           [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
+    sign_request({SignAlgorithm, SignVersion},
+                 [
+                  {private_key, PrivateKey},
+                  {body, Body},
+                  {user, User},
+                  {method, Method},
+                  {time, Time},
+                  {path, Path},
+                  {get_header, undefined}
+                 ]).
+
+%% @doc Sign an HTTP request so it can be sent to a Chef server.
+%%
+%% Returns a list of header tuples that should be included in the
+%% final HTTP request.
+-spec sign_request({signing_algorithm(), signing_version()},
+                   [sign_parameter()]) -> [{[any()],[any()]}].
+sign_request({SignAlgorithm, SignVersion}=SignInfo, Options) ->
+    [PrivateKey, Body, User, Method, Time,
+     Path, GetHeader] = [proplists:get_value(X, Options) ||
+                    X <- [private_key, body, user, method, time,
+                          path, get_header]
+                   ],
     CTime = time_iso8601(Time),
-    HashedBody = hashed_body(Body, {SignAlgorithm, SignVersion}),
-    SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
-    Sig = base64:encode(create_signature(SignThis, PrivateKey, {SignAlgorithm, SignVersion})),
-    X_Ops_Sign = x_ops_sign_header_value({SignAlgorithm, SignVersion}),
+    HashedBody = hashed_body(Body, SignInfo),
+    SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion, GetHeader),
+    Sig = base64:encode(create_signature(SignThis, PrivateKey, SignInfo)),
+    X_Ops_Sign = x_ops_sign_header_value(SignInfo),
     headers_as_str([{"X-Ops-Content-Hash", HashedBody},
                     {"X-Ops-UserId", User},
                     {"X-Ops-Sign", X_Ops_Sign},
@@ -514,7 +557,7 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     [{algorithm, SignAlgorithm}, {version, SignVersion}] =  validate_headers(GetHeader, TimeSkew),
     BodyHash = hashed_body(Body, {SignAlgorithm, SignVersion}),
     Plain = canonicalize_request(BodyHash, UserId, Method, ReqTime,
-                                 Path, SignAlgorithm, SignVersion),
+                                 Path, SignAlgorithm, SignVersion, GetHeader),
     verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, {SignAlgorithm, SignVersion}).
 
 

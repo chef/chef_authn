@@ -37,6 +37,10 @@
 -define(SIGNING_VERSION_V1_2, <<"1.2">>).
 -define(SIGNING_VERSION_V1_3, <<"1.3">>).
 
+%% version 1.3 signs the api version header. If it not provided,
+%% we assume a default value.
+-define(DEFAULT_SERVER_API_VERSION, 0).
+
 %% version 1.2 incorporates the related but slightly different RSA PKCS 1.5 SHA+RSA signing method
 -define(SIGNING_VERSIONS, [?SIGNING_VERSION_V1_0,
                            ?SIGNING_VERSION_V1_1,
@@ -55,10 +59,10 @@
 %% headers. Thus, it will work only for Chef Server.
 -define(VERSION1_3_SIG_FORMAT, <<"Method:~s\nHashed Path:~s\n"
                                "X-Ops-Content-Hash:~s\n"
-                               %"X-Ops-Server-API-Version:~s\n"
                                "X-Ops-Sign:algorithm=~s;version=~s\n"
                                "X-Ops-Timestamp:~s\n"
-                               "X-Ops-UserId:~ts">>).
+                               "X-Ops-UserId:~ts\n"
+                               "X-Ops-Server-API-Version:~B">>).
 
 -define(REQUIRED_HEADERS, [<<"X-Ops-UserId">>,
                            <<"X-Ops-Timestamp">>,
