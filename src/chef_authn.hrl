@@ -61,7 +61,7 @@
                                "X-Ops-Content-Hash:~s\n"
                                "X-Ops-Sign:algorithm=~s;version=~s\n"
                                "X-Ops-Timestamp:~s\n"
-                               "X-Ops-UserId:~ts\n"
+                               "X-Ops-UserId:~s\n"
                                "X-Ops-Server-API-Version:~B">>).
 
 -define(REQUIRED_HEADERS, [<<"X-Ops-UserId">>,
