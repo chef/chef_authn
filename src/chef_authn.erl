@@ -39,14 +39,18 @@
          extract_private_key/1,
          extract_public_key/1,
          extract_pem_encoded_public_key/1,
-         hash_string/1,
-         hash_file/1,
+         sign_request/2,
          sign_request/5,
          sign_request/6,
          sign_request/8,
          authenticate_user_request/6,
          validate_headers/2
          ]).
+
+% deprecated
+-export([hash_string/1,
+         hash_file/1
+        ]).
 
 -include_lib("public_key/include/public_key.hrl").
 
@@ -67,8 +71,13 @@
 -type public_key_list() :: [{key_desc(), public_key_data() | public_key:rsa_public_key()}].
 
 -type header_fun() :: fun((header_name()) -> header_value()).
-%% -type rsa_public_key() :: public_key:rsa_public_key().
-
+-type sign_parameter() :: {private_key, public_key:rsa_private_key()} |
+                          {body, http_body()} |
+                          {user, user_id()} |
+                          {method, http_method()} |
+                          {time, erlang_time() | now} |
+                          {path, http_path()} |
+                          {get_header, header_fun()}.
 
 
 -ifdef(TEST).
@@ -180,21 +189,45 @@ extract_pem_encoded_public_key(_) ->
 
 -spec(hash_string(string()|binary()) -> sha_hash64()).
 %% @doc Base 64 encoded SHA1 of `Str'
+%% @deprecated This is an internal function
 hash_string(Str) ->
     base64:encode(crypto:hash(sha, Str)).
 
+-spec(hash_string(string()|binary(), {signing_algorithm(), signing_version()}) -> sha_hash64()).
+%% @doc Base 64 encoded SHA1 of `Str'
+hash_string(Str, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
+                                        SignVersion =:= ?SIGNING_VERSION_V1_1;
+                                        SignVersion =:= ?SIGNING_VERSION_V1_2
+                                        ->
+    base64:encode(crypto:hash(sha, Str));
+hash_string(Str, {SignAlgorithm, SignVersion})
+  when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+    base64:encode(crypto:hash(openssl_algorithm_name(SignAlgorithm), Str)).
+
+
 -spec(hash_file(pid()) -> sha_hash64()).
 %% @doc Base 64 encoded SHA1 of contents of `F', which must be the pid of a file
+%% @deprecated This is an internal function and stop being exposed
 hash_file(F) ->
-    hash_file(F, crypto:hash_init(sha)).
+    hash_file_finish(F, crypto:hash_init(sha)).
 
--spec hash_file(file:io_device(), _) -> sha_hash64().
-hash_file(F, Ctx) ->
+-spec(hash_file(pid(), {signing_algorithm(), signing_version()}) -> sha_hash64()).
+%% @doc Base 64 encoded checksum of contents of `F', which must be the pid of a file
+hash_file(F, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
+                                    SignVersion =:= ?SIGNING_VERSION_V1_1;
+                                    SignVersion =:= ?SIGNING_VERSION_V1_2
+                                    ->
+    hash_file_finish(F, crypto:hash_init(sha));
+hash_file(F, {SignAlgorithm, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+    hash_file_finish(F, crypto:hash_init(openssl_algorithm_name(SignAlgorithm))).
+
+-spec hash_file_finish(file:io_device(), _) -> sha_hash64().
+hash_file_finish(F, Ctx) ->
     case io:get_chars(F, "", ?BUF_SIZE) of
         eof ->
             base64:encode(crypto:hash_final(Ctx));
         Data ->
-            hash_file(F, crypto:hash_update(Ctx, Data))
+            hash_file_finish(F, crypto:hash_update(Ctx, Data))
     end.
 
 
@@ -218,18 +251,18 @@ canonical_path(Path) ->
 canonical_method(Method) ->
     list_to_binary(string:to_upper(binary_to_list(Method))).
 
--spec(hashed_body(binary() | pid()) -> binary()).
+-spec(hashed_body(binary() | pid(), {signing_algorithm(), signing_version()}) -> binary()).
 %% @doc Return the SHA1 hash of the body which can either be a binary
 %% or the pid of a file.
-hashed_body(Body) when is_pid(Body) ->
-    hash_file(Body);
-hashed_body(Body) when is_binary(Body) ->
-    hash_string(Body);
-hashed_body(Body) when is_list(Body) ->
-    hashed_body(iolist_to_binary(Body)).
+hashed_body(Body, SignInfo) when is_pid(Body) ->
+    hash_file(Body, SignInfo);
+hashed_body(Body, SignInfo) when is_binary(Body) ->
+    hash_string(Body, SignInfo);
+hashed_body(Body, SignInfo) when is_list(Body) ->
+    hashed_body(iolist_to_binary(Body), SignInfo).
 
 -spec(canonicalize_request(sha_hash64(), user_id(), http_method(), iso8601_time(),
-                           http_path(), signing_algorithm(), signing_version())
+                           http_path(), signing_algorithm(), signing_version(), header_fun())
       -> binary()).
 %% @doc Canonicalize an HTTP request into a binary that can be signed
 %% for verification.
@@ -237,40 +270,69 @@ hashed_body(Body) when is_list(Body) ->
 %% NOTE: this function assumes that `Time' is already in canonical
 %% form (see chef_time_utils:canonical_time/1).  Other arguments are canonicalized.
 %%
-canonicalize_request(BodyHash, UserId, _Method, Time, _Path, _SignAlgorithm, _SignVersion)
+canonicalize_request(BodyHash, UserId, _Method, Time, _Path, _SignAlgorithm, _SignVersion, _GetHeader)
   when BodyHash =:= undefined orelse
          UserId =:= undefined orelse
            Time =:= undefined ->
     erlang:error({missing_required_data, {BodyHash, UserId, Time}});
-canonicalize_request(BodyHash, UserId, Method, Time, Path, _SignAlgorithm, SignVersion) ->
+canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm, SignVersion, _GetHeader)
+  when SignVersion =:= ?SIGNING_VERSION_V1_0;
+       SignVersion =:= ?SIGNING_VERSION_V1_1;
+       SignVersion =:= ?SIGNING_VERSION_V1_2 ->
     Format = ?VERSION1_SIG_FORMAT,
-    CanonicalUserId = canonicalize_userid(UserId, SignVersion),
+    CanonicalUserId = canonicalize_userid(UserId, {SignAlgorithm, SignVersion}),
     iolist_to_binary(io_lib:format(Format, [canonical_method(Method),
-                                            hash_string(canonical_path(Path)),
+                                            hash_string(canonical_path(Path), {SignAlgorithm, SignVersion}),
                                             BodyHash,
                                             Time,
-                                            CanonicalUserId])).
+                                            CanonicalUserId]));
+canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm,
+                     ?SIGNING_VERSION_V1_3=SignVersion, GetHeader) ->
+    Format = ?VERSION1_3_SIG_FORMAT,
+    CanonicalUserId = canonicalize_userid(UserId, {SignAlgorithm, SignVersion}),
+    ServerApiVersion = case GetHeader of
+        undefined -> ?DEFAULT_SERVER_API_VERSION;
+        HeaderFun -> case HeaderFun(<<"X-Ops-Server-API-Version">>) of
+                         undefined -> ?DEFAULT_SERVER_API_VERSION;
+                         Version -> binary_to_integer(Version)
+                     end
+    end,
+    iolist_to_binary(io_lib:format(Format, [canonical_method(Method),
+                                            hash_string(canonical_path(Path), {SignAlgorithm, SignVersion}),
+                                            BodyHash,
+                                            SignAlgorithm, SignVersion,
+                                            Time,
+                                            CanonicalUserId,
+                                            ServerApiVersion])).
 
-canonicalize_userid(UserId, SignVersion)  when SignVersion =:= ?SIGNING_VERSION_V1_1;
-                                               SignVersion =:= ?SIGNING_VERSION_V1_2 ->
-            hash_string(UserId);
-canonicalize_userid(UserId, ?SIGNING_VERSION_V1_0) ->
+
+canonicalize_userid(UserId, {_, SignVersion}=SignInfo)
+  when SignVersion =:= ?SIGNING_VERSION_V1_1;
+       SignVersion =:= ?SIGNING_VERSION_V1_2;
+       SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+            hash_string(UserId, SignInfo);
+canonicalize_userid(UserId, {_, ?SIGNING_VERSION_V1_0}) ->
             UserId.
 
 -spec create_signature(binary(), public_key:rsa_private_key(),
-                       signing_version()) ->  binary().
-create_signature(SignThis, PrivateKey, SignVersion) when SignVersion =:= ?SIGNING_VERSION_V1_0;
-                                                      SignVersion =:= ?SIGNING_VERSION_V1_1 ->
+                       {signing_algorithm(), signing_version()}) ->  binary().
+create_signature(SignThis, PrivateKey, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
+                                                         SignVersion =:= ?SIGNING_VERSION_V1_1 ->
     public_key:encrypt_private(SignThis, PrivateKey);
-create_signature(SignThis, PrivateKey, ?SIGNING_VERSION_V1_2) ->
-    public_key:sign(SignThis, sha, PrivateKey).
+create_signature(SignThis, PrivateKey, {_, ?SIGNING_VERSION_V1_2}) ->
+    public_key:sign(SignThis, sha, PrivateKey);
+create_signature(SignThis, PrivateKey, {SignAlgorithm, ?SIGNING_VERSION_V1_3}) ->
+    public_key:sign(SignThis, openssl_algorithm_name(SignAlgorithm), PrivateKey).
 
 -spec sign_request(public_key:rsa_private_key(), user_id(), http_method(),
                    erlang_time() | now, http_path()) -> [{[any()],[any()]}].
 %% @doc Sign an HTTP request without a body (primarily GET)
+%% @deprecated Use sign_request/2 instead.
 sign_request(PrivateKey, User, Method, Time, Path) ->
     sign_request(PrivateKey, <<"">>, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
 
+%% @doc Sign an HTTP request without a body (primarily GET)
+%% @deprecated Use sign_request/2 instead.
 -spec sign_request(public_key:rsa_private_key(), http_body(), user_id(),
                    http_method(), erlang_time() | now, http_path()) ->
                           [{[any()],[any()]}].
@@ -287,21 +349,55 @@ sign_request(PrivateKey, Body, User, Method, Time, Path) ->
 %%
 %% Note that the headers can't be passed directly to validate_headers which expects headers to
 %% have binary keys (as returned from the ejson/jiffy parsing routines
+%%
+%% @deprecated Use sign_request/2 instead.
 -spec sign_request(public_key:rsa_private_key(), http_body(), user_id(),
                    http_method(), erlang_time() | now, http_path(),
                    signing_algorithm(), signing_version()) ->
                           [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion) ->
+    sign_request({SignAlgorithm, SignVersion},
+                 [
+                  {private_key, PrivateKey},
+                  {body, Body},
+                  {user, User},
+                  {method, Method},
+                  {time, Time},
+                  {path, Path},
+                  {get_header, undefined}
+                 ]).
+
+%% @doc Sign an HTTP request so it can be sent to a Chef server.
+%%
+%% Returns a list of header tuples that should be included in the
+%% final HTTP request.
+-spec sign_request({signing_algorithm(), signing_version()},
+                   [sign_parameter()]) -> [{[any()],[any()]}].
+sign_request({SignAlgorithm, SignVersion}=SignInfo, Options) ->
+    [PrivateKey, Body, User, Method, Time,
+     Path, GetHeader] = [proplists:get_value(X, Options) ||
+                    X <- [private_key, body, user, method, time,
+                          path, get_header]
+                   ],
     CTime = time_iso8601(Time),
-    HashedBody = hashed_body(Body),
-    SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion),
-    Sig = base64:encode(create_signature(SignThis, PrivateKey, SignVersion)),
-    X_Ops_Sign = iolist_to_binary(io_lib:format("version=~s", [SignVersion])),
+    HashedBody = hashed_body(Body, SignInfo),
+    SignThis = canonicalize_request(HashedBody, User, Method, CTime, Path, SignAlgorithm, SignVersion, GetHeader),
+    Sig = base64:encode(create_signature(SignThis, PrivateKey, SignInfo)),
+    X_Ops_Sign = x_ops_sign_header_value(SignInfo),
     headers_as_str([{"X-Ops-Content-Hash", HashedBody},
                     {"X-Ops-UserId", User},
                     {"X-Ops-Sign", X_Ops_Sign},
                     {"X-Ops-Timestamp", CTime}]
                    ++ sig_header_items(Sig)).
+
+%% @doc Return the header value for a given signature description
+-spec x_ops_sign_header_value({signing_algorithm(), signing_version()}) -> binary().
+x_ops_sign_header_value({_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
+                                               SignVersion =:= ?SIGNING_VERSION_V1_1;
+                                               SignVersion =:= ?SIGNING_VERSION_V1_2 ->
+    iolist_to_binary(io_lib:format("version=~s", [SignVersion]));
+x_ops_sign_header_value({SignAlgorithm, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+    iolist_to_binary(io_lib:format("algorithm=~s;version=~s", [SignAlgorithm, SignVersion])).
 
 %% @doc Return the time as an ISO8601 formatted string.  Accept the atom 'now'
 %% as a argument to represent the current time
@@ -459,20 +555,20 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
     ContentHash = GetHeader(<<"X-Ops-Content-Hash">>),
     AuthSig = sig_from_headers(GetHeader, 1, []),
     [{algorithm, SignAlgorithm}, {version, SignVersion}] =  validate_headers(GetHeader, TimeSkew),
-    BodyHash = hashed_body(Body),
+    BodyHash = hashed_body(Body, {SignAlgorithm, SignVersion}),
     Plain = canonicalize_request(BodyHash, UserId, Method, ReqTime,
-                                 Path, SignAlgorithm, SignVersion),
-    verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion).
+                                 Path, SignAlgorithm, SignVersion, GetHeader),
+    verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, {SignAlgorithm, SignVersion}).
 
 
 -spec verify_sig_or_sigs(binary(), binary(), binary(), binary(), binary(),
-                         [{key_desc(), public_key_data() | public_key:rsa_public_key()}], binary()) ->
+                         [{key_desc(), public_key_data() | public_key:rsa_public_key()}], {binary(), binary()}) ->
                                 {name, user_id()} | {name, user_id(), key_desc()}.
-verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId,  [Head | _] = KeyData, SignVersion)
+verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId,  [Head | _] = KeyData, SignInfo)
   when is_tuple(Head) ->
-    verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion);
-verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion) ->
-    verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignVersion).
+    verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignInfo);
+verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignInfo) ->
+    verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignInfo).
 
 
 %% @doc Try sigs in order, returning key_id for the first one that validates correctly
@@ -481,26 +577,26 @@ verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignV
 %% what we are repeating each step
 %%
 -spec verify_sigs(binary(), binary(), binary(), binary(), binary(),
-                  [{key_desc(), public_key_data() | public_key:rsa_public_key()}], binary()) ->
+                  [{key_desc(), public_key_data() | public_key:rsa_public_key()}], {binary(), binary()}) ->
                          {name, user_id(), key_desc()}.
 
-verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey}], SignVersion) ->
-    {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignVersion),
+verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey}], SignInfo) ->
+    {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignInfo),
     {name, UserId, KeyId};
-verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey} | Remaining], SignVersion) ->
+verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey} | Remaining], SignInfo) ->
     try
-        {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignVersion),
+        {name, UserId} = verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PubKey, SignInfo),
         {name, UserId, KeyId}
     catch
         error:_Any ->
-            verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, Remaining, SignVersion)
+            verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, Remaining, SignInfo)
     end.
 
 -spec verify_sig(binary(), binary(), binary(), binary(), binary(),
-                 public_key_data() | public_key:rsa_public_key(), binary()) ->
+                 public_key_data() | public_key:rsa_public_key(), {binary(), binary()}) ->
                         {name, user_id()}.
 
-verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion)
+verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, {_, SignVersion})
   when SignVersion =:= ?SIGNING_VERSION_V1_0;
        SignVersion =:= ?SIGNING_VERSION_V1_1 ->
     Plain = decrypt_sig(AuthSig, PublicKey),
@@ -510,9 +606,17 @@ verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, SignVersion
     %% if the content hash is wrong.
     ContentHash = BodyHash,
     {name, UserId};
-verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, ?SIGNING_VERSION_V1_2) ->
+verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, {_, ?SIGNING_VERSION_V1_2}) ->
     true = public_key:verify(Plain, sha, base64:decode(AuthSig), decode_key_data(PublicKey)),
+    {name, UserId};
+verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey,
+           {SignAlgorithm, ?SIGNING_VERSION_V1_3}) ->
+    true = public_key:verify(Plain, openssl_algorithm_name(SignAlgorithm),
+                             base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId}.
+
+openssl_algorithm_name(<<"sha1">>) -> sha;
+openssl_algorithm_name(<<"sha256">>) -> sha256.
 
 -spec decrypt_sig(binary(), public_key:public_key_data() |
                   public_key:rsa_public_key()) -> binary().
