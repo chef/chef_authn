@@ -588,6 +588,9 @@ authenticate_user_request_no_body_test_() ->
               ?assertEqual({name, ?user}, Ok)
      end].
 
+authenticate_user_request_1_3_test_() ->
+    authenticate_user_request_tests_by_version(<<"1.3">>).
+
 authenticate_user_request_1_2_test_() ->
     authenticate_user_request_tests_by_version(<<"1.2">>).
 
