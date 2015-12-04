@@ -228,9 +228,8 @@ hash_string(Str, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
                                         SignVersion =:= ?SIGNING_VERSION_V1_2
                                         ->
     base64:encode(crypto:hash(sha, Str));
-hash_string(Str, {SignAlgorithm, SignVersion})
-  when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
-    base64:encode(crypto:hash(openssl_algorithm_name(SignAlgorithm), Str)).
+hash_string(Str, {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
+    base64:encode(crypto:hash(sha256, Str)).
 
 
 -spec(hash_file(pid()) -> sha_hash64()).
@@ -246,8 +245,8 @@ hash_file(F, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
                                     SignVersion =:= ?SIGNING_VERSION_V1_2
                                     ->
     hash_file_finish(F, crypto:hash_init(sha));
-hash_file(F, {SignAlgorithm, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
-    hash_file_finish(F, crypto:hash_init(openssl_algorithm_name(SignAlgorithm))).
+hash_file(F, {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
+    hash_file_finish(F, crypto:hash_init(sha256)).
 
 -spec hash_file_finish(file:io_device(), _) -> sha_hash64().
 hash_file_finish(F, Ctx) ->
@@ -349,8 +348,8 @@ create_signature(SignThis, PrivateKey, {_, SignVersion}) when SignVersion =:= ?S
     public_key:encrypt_private(SignThis, PrivateKey);
 create_signature(SignThis, PrivateKey, {_, ?SIGNING_VERSION_V1_2}) ->
     public_key:sign(SignThis, sha, PrivateKey);
-create_signature(SignThis, PrivateKey, {SignAlgorithm, ?SIGNING_VERSION_V1_3}) ->
-    public_key:sign(SignThis, openssl_algorithm_name(SignAlgorithm), PrivateKey).
+create_signature(SignThis, PrivateKey, {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
+    public_key:sign(SignThis, sha256, PrivateKey).
 
 -spec sign_request(public_key:rsa_private_key(), user_id(), http_method(),
                    erlang_time() | now, http_path()) -> [{[any()],[any()]}].
@@ -650,13 +649,10 @@ verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, {_, ?SIGN
     true = public_key:verify(Plain, sha, base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId};
 verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey,
-           {SignAlgorithm, ?SIGNING_VERSION_V1_3}) ->
-    true = public_key:verify(Plain, openssl_algorithm_name(SignAlgorithm),
+           {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
+    true = public_key:verify(Plain, sha256,
                              base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId}.
-
-openssl_algorithm_name(<<"sha1">>) -> sha;
-openssl_algorithm_name(<<"sha256">>) -> sha256.
 
 -spec decrypt_sig(binary(), public_key:public_key_data() |
                   public_key:rsa_public_key()) -> binary().

@@ -112,40 +112,6 @@
                            ["POST", ?hashed_path_sha1, ?hashed_body_sha1,
                             ?request_time_iso8601, chef_authn:hash_string(?user)]))).
 
--define(expected_sign_string_v13_sha1,
-        iolist_to_binary(io_lib:format(
-                           "Method:~s\nHashed Path:~s\n"
-                           "X-Ops-Content-Hash:~s\n"
-                           "X-Ops-Sign:algorithm=~s;version=~s\n"
-                           "X-Ops-Timestamp:~s\n"
-                           "X-Ops-UserId:~s\n"
-                           "X-Ops-Server-API-Version:~B",
-                           ["POST", ?hashed_path_sha1, ?hashed_body_sha1,
-                            ?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_3,
-                            ?request_time_iso8601,
-                            chef_authn:hash_string(?user,
-                                                   {?SIGNING_ALGORITHM_SHA1,
-                                                    ?SIGNING_VERSION_V1_3}),
-                            1
-                           ]))).
-
--define(expected_sign_string_v13_sha1_api_default,
-        iolist_to_binary(io_lib:format(
-                           "Method:~s\nHashed Path:~s\n"
-                           "X-Ops-Content-Hash:~s\n"
-                           "X-Ops-Sign:algorithm=~s;version=~s\n"
-                           "X-Ops-Timestamp:~s\n"
-                           "X-Ops-UserId:~s\n"
-                           "X-Ops-Server-API-Version:~B",
-                           ["POST", ?hashed_path_sha1, ?hashed_body_sha1,
-                            ?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_3,
-                            ?request_time_iso8601,
-                            chef_authn:hash_string(?user,
-                                                   {?SIGNING_ALGORITHM_SHA1,
-                                                    ?SIGNING_VERSION_V1_3}),
-                            0
-                           ]))).
-
 -define(expected_sign_string_v13_sha256,
         iolist_to_binary(io_lib:format(
                            "Method:~s\nHashed Path:~s\n"
@@ -185,8 +151,8 @@ accepted_signing_protocol_test() ->
     ?assertEqual(false, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_2)),
     ?assertEqual(false, chef_authn:accepted_signing_protocol(<<"foo">>, ?SIGNING_VERSION_V1_2)),
 
-    %% v1.3 supports SHA1 and SHA256
-    ?assertEqual(true, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_3)),
+    %% v1.3 supports only SHA256
+    ?assertEqual(false, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_3)),
     ?assertEqual(true, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3)),
     ?assertEqual(false, chef_authn:accepted_signing_protocol(<<"foo">>, ?SIGNING_VERSION_V1_3)).
 
@@ -218,7 +184,6 @@ hashed_body_test() ->
                  {{?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_0}, ?hashed_body_sha1},
                  {{?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_1}, ?hashed_body_sha1},
                  {{?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_2}, ?hashed_body_sha1},
-                 {{?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_3}, ?hashed_body_sha1},
                  {{?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}, ?hashed_body_sha256}
                 ],
     hashed_body_test_helper(TestCases).
@@ -288,23 +253,6 @@ canonicalize_request_v_1_2_test() ->
     Val2 = chef_authn:canonicalize_request(?hashed_body_sha1, ?user, <<"post">>, ?request_time_iso8601, ?path,
                                            Algorithm, Version, undefined),
     ?assertEqual(?expected_sign_string_v12, Val2).
-
-canonicalize_request_v_1_3_sha1_test() ->
-    Algorithm = ?SIGNING_ALGORITHM_SHA1,
-    Version = <<"1.3">>,
-    GetHeader = fun(<<"X-Ops-Server-API-Version">>) ->
-                       <<"1">>;
-                  (_) ->
-                       undefined
-               end,
-    Val1 = chef_authn:canonicalize_request(?hashed_body_sha1, ?user, <<"post">>, ?request_time_iso8601, ?path,
-                                           Algorithm, Version, GetHeader),
-    ?assertEqual(?expected_sign_string_v13_sha1, Val1),
-
-    % verify that default server api version is 0
-    Val2 = chef_authn:canonicalize_request(?hashed_body_sha1, ?user, <<"post">>, ?request_time_iso8601, ?path,
-                                           Algorithm, Version, undefined),
-    ?assertEqual(?expected_sign_string_v13_sha1_api_default, Val2).
 
 canonicalize_request_v_1_3_sha256_test() ->
     Algorithm = ?SIGNING_ALGORITHM_SHA256,
@@ -393,43 +341,6 @@ sign_request_1_2_test() ->
                        ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
-sign_request_1_3_sha1_test() ->
-    Algorithm = <<"sha1">>,
-    Version = <<"1.3">>,
-    {ok, RawKey} = file:read_file("../test/private_key"),
-    Private_key = chef_authn:extract_private_key(RawKey),
-    AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_3_SHA1) end,
-    EXPECTED_SIGN_RESULT =
-        [
-         {"X-Ops-Content-Hash", ?X_OPS_CONTENT_HASH},
-         {"X-Ops-UserId", ?X_OPS_USERID},
-         {"X-Ops-Sign", "algorithm=sha1;version=1.3"},
-         {"X-Ops-Timestamp", ?request_time_iso8601},
-         {"X-Ops-Authorization-1", AuthLine(1)},
-         {"X-Ops-Authorization-2", AuthLine(2)},
-         {"X-Ops-Authorization-3", AuthLine(3)},
-         {"X-Ops-Authorization-4", AuthLine(4)},
-         {"X-Ops-Authorization-5", AuthLine(5)},
-         {"X-Ops-Authorization-6", AuthLine(6)}
-        ],
-
-    GetHeader = fun(<<"X-Ops-Server-API-Version">>) ->
-                   <<"1">>;
-              (_) ->
-                   undefined
-           end,
-
-    Sig = chef_authn:sign_request({Algorithm, Version}, [
-                               {private_key, Private_key},
-                               {body, ?body},
-                               {user, ?user},
-                               {method, <<"post">>},
-                               {time, ?request_time_erlang},
-                               {path, ?path},
-                               {get_header, GetHeader}
-                              ]),
-    ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
-
 sign_request_1_3_sha256_test() ->
     Algorithm = <<"sha256">>,
     Version = <<"1.3">>,
@@ -508,17 +419,6 @@ verify_sig_v1_2_test() ->
                                        list_to_binary(?X_OPS_USERID),
                                        Public_key,
                                        {<<"sha1">>, <<"1.2">>})).
-
-verify_sig_v1_3_sha1_test() ->
-    Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_3_SHA1),
-    Plain = ?expected_sign_string_v13_sha1,
-    {ok, Public_key} = file:read_file("test/example_cert.pem"),
-    ?assertEqual({name,<<"spec-user">>},
-                 chef_authn:verify_sig(Plain, ignore, ignore,
-                                       Sig,
-                                       list_to_binary(?X_OPS_USERID),
-                                       Public_key,
-                                       {<<"sha1">>, <<"1.3">>})).
 
 verify_sig_v1_3_sha256_test() ->
     Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_3_SHA256),
@@ -635,7 +535,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
     {ok, RawKey} = file:read_file("../test/private_key"),
     Private_key = chef_authn:extract_private_key(RawKey),
     {ok, Public_key} = file:read_file("../test/example_cert.pem"),
-    Alg = chef_authn:default_signing_algorithm(),
+    Alg = chef_authn:default_signing_algorithm(SignVersion),
     Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
                                        ?request_time_erlang, ?path, Alg, SignVersion),
     %% We convert here back into binary keys in headers since that
