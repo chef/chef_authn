@@ -59,9 +59,9 @@
 
 %% The version 1.3 format includes the X-Ops-Sign and X-Ops-Server-API-Version
 %% headers. Thus, it will work only for Chef Server.
--define(VERSION1_3_SIG_FORMAT, <<"Method:~s\nHashed Path:~s\n"
+-define(VERSION1_3_SIG_FORMAT, <<"Method:~s\nPath:~s\n"
                                "X-Ops-Content-Hash:~s\n"
-                               "X-Ops-Sign:algorithm=~s;version=~s\n"
+                               "X-Ops-Sign:version=~s\n"
                                "X-Ops-Timestamp:~s\n"
                                "X-Ops-UserId:~s\n"
                                "X-Ops-Server-API-Version:~B">>).

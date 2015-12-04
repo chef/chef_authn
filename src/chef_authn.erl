@@ -325,21 +325,21 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm,
                      end
     end,
     iolist_to_binary(io_lib:format(Format, [canonical_method(Method),
-                                            hash_string(canonical_path(Path), {SignAlgorithm, SignVersion}),
+                                            canonical_path(Path),
                                             BodyHash,
-                                            SignAlgorithm, SignVersion,
+                                            SignVersion,
                                             Time,
                                             CanonicalUserId,
                                             ServerApiVersion])).
 
-
 canonicalize_userid(UserId, {_, SignVersion}=SignInfo)
   when SignVersion =:= ?SIGNING_VERSION_V1_1;
-       SignVersion =:= ?SIGNING_VERSION_V1_2;
-       SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+       SignVersion =:= ?SIGNING_VERSION_V1_2 ->
             hash_string(UserId, SignInfo);
-canonicalize_userid(UserId, {_, ?SIGNING_VERSION_V1_0}) ->
-            UserId.
+canonicalize_userid(UserId, {_, SignVersion})
+  when SignVersion =:= ?SIGNING_VERSION_V1_0;
+       SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+    UserId.
 
 -spec create_signature(binary(), public_key:rsa_private_key(),
                        {signing_algorithm(), signing_version()}) ->  binary().

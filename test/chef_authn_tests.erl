@@ -73,12 +73,12 @@
 
 -define(X_OPS_AUTHORIZATION_LINES_V1_3_SHA256,
         [
-         "BjR+iTK2eOgwmT2yGqLvE7Fp+VlpRGyL1dVoF2DmhUPO7EVsnxx2s32AmlOw",
-         "EpaACpav8SoB7K4rpOo3gfBm0XAYLnLLWzcec2OQG2O0wxxHiKVn4qWEe7Cs",
-         "RZ903DGM54t4uK75vx6wwoEdZqZe21npsLK+F3oAqnkgp+YXmlYv9Se5tFKB",
-         "0GWM1ibGJMjUIFAm7vxzjcuEvkkKN49MnXeMAAykfymcs74RU6xEKYzzSAyC",
-         "ygkV6xQSapDMp/aY29cVA/1FgZeVMhnFSTjtqBehchZYwXswr0A72A86gID9",
-         "h2QsUpmQJwbOK3bb1GptAnd5IiLzIxtu+vFeY6h4eA=="
+         "FZOmXAyOBAZQV/uw188iBljBJXOm+m8xQ/8KTGLkgGwZNcRFxk1m953XjE3W",
+         "VGy1dFT76KeaNWmPCNtDmprfH2na5UZFtfLIKrPv7xm80V+lzEzTd9WBwsfP",
+         "42dZ9N+V9I5SVfcL/lWrrlpdybfceJC5jOcP5tzfJXWUITwb6Z3Erg3DU3Uh",
+         "H9h9E0qWlYGqmiNCVrBnpe6Si1gU/Jl+rXlRSNbLJ4GlArAPuL976iTYJTzE",
+         "MmbLUIm3JRYi00Yb01IUCCKdI90vUq1HHNtlTEu93YZfQaJwRxXlGkCNwIJe",
+         "fy49QzaCIEu1XiOx5Jn+4GmkrZch/RrK9VzQWXgs+w=="
         ]
        ).
 
@@ -114,18 +114,15 @@
 
 -define(expected_sign_string_v13_sha256,
         iolist_to_binary(io_lib:format(
-                           "Method:~s\nHashed Path:~s\n"
+                           "Method:~s\nPath:~s\n"
                            "X-Ops-Content-Hash:~s\n"
-                           "X-Ops-Sign:algorithm=~s;version=~s\n"
+                           "X-Ops-Sign:version=1.3\n"
                            "X-Ops-Timestamp:~s\n"
                            "X-Ops-UserId:~s\n"
                            "X-Ops-Server-API-Version:~B",
-                           ["POST", ?hashed_path_sha256, ?hashed_body_sha256,
-                            ?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3,
+                           ["POST", ?path, ?hashed_body_sha256,
                             ?request_time_iso8601,
-                            chef_authn:hash_string(?user,
-                                                   {?SIGNING_ALGORITHM_SHA256,
-                                                    ?SIGNING_VERSION_V1_3}),
+                            ?user,
                             1
                            ]))).
 
