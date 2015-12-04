@@ -163,6 +163,34 @@
                             1
                            ]))).
 
+accepted_signing_protocol_test() ->
+    %% All signing versions should accept default
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(default, ?SIGNING_VERSION_V1_0)),
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(default, ?SIGNING_VERSION_V1_1)),
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(default, ?SIGNING_VERSION_V1_2)),
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(default, ?SIGNING_VERSION_V1_3)),
+
+    %% v1.0 supports only SHA1
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_0)),
+    ?assertEqual(false, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_0)),
+    ?assertEqual(false, chef_authn:accepted_signing_protocol(<<"foo">>, ?SIGNING_VERSION_V1_0)),
+
+    %% v1.1 supports only SHA1
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_1)),
+    ?assertEqual(false, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_1)),
+    ?assertEqual(false, chef_authn:accepted_signing_protocol(<<"foo">>, ?SIGNING_VERSION_V1_1)),
+
+    %% v1.2 supports only SHA1
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_2)),
+    ?assertEqual(false, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_2)),
+    ?assertEqual(false, chef_authn:accepted_signing_protocol(<<"foo">>, ?SIGNING_VERSION_V1_2)),
+
+    %% v1.3 supports SHA1 and SHA256
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA1, ?SIGNING_VERSION_V1_3)),
+    ?assertEqual(true, chef_authn:accepted_signing_protocol(?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3)),
+    ?assertEqual(false, chef_authn:accepted_signing_protocol(<<"foo">>, ?SIGNING_VERSION_V1_3)).
+
+
 canonical_path_test_() ->
     Tests = [{<<"/">>, <<"/">>},
              {<<"////">>, <<"/">>},

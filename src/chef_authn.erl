@@ -32,7 +32,7 @@
 -include("chef_authn.hrl").
 
 -export([default_signing_algorithm/0,
-         accepted_signing_algorithm/1,
+         accepted_signing_protocol/2,
          default_signing_version/0,
          accepted_signing_version/1,
          extract_public_or_private_key/1,
@@ -48,7 +48,8 @@
          ]).
 
 % deprecated
--export([hash_string/1,
+-export([accepted_signing_algorithm/1,
+         hash_string/1,
          hash_file/1
         ]).
 
@@ -92,6 +93,7 @@ default_signing_algorithm() ->
 
 %% @doc Is the signing algorithm valid?
 %% of {unknown_algorithm, Algorithm}
+%% @deprecated use accepted_signing_protocol/2 instead
 -spec accepted_signing_algorithm(Algorithm :: binary()) -> boolean().
 accepted_signing_algorithm(Algorithm) ->
     Algorithm =:= ?DEFAULT_SIGNING_ALGORITHM.
@@ -104,7 +106,20 @@ default_signing_version() ->
 %% @doc Is the signing version acceptable for chef request.  Returns true if so, else false.
 -spec accepted_signing_version(Version :: binary()) -> boolean().
 accepted_signing_version(Version) ->
-    lists:member(Version, ?SIGNING_VERSIONS).
+    proplists:is_defined(Version, ?SIGNING_VERSIONS).
+
+%% @doc Is the signing version and algorithm acceptable for chef request.  Returns true if so, else false.
+-spec accepted_signing_protocol(Algorithm :: binary() | default, Version :: binary()) -> boolean().
+accepted_signing_protocol(default, Version) ->
+    accepted_signing_version(Version);
+accepted_signing_protocol(Algorithm, Version) ->
+    case proplists:get_value(Version, ?SIGNING_VERSIONS) of
+        undefined ->
+            false;
+        SupportedAlgorithms ->
+            lists:member(Algorithm, SupportedAlgorithms)
+    end.
+
 
 -spec process_key({'RSAPublicKey',  binary(), _} |
                   {'RSAPrivateKey', binary(), _} |
@@ -505,7 +520,7 @@ validate_sign_description(GetHeader) ->
     SignDesc = parse_signing_description(GetHeader(<<"X-Ops-Sign">>)),
     SignVersion = proplists:get_value(?SIGNING_VERSION_KEY, SignDesc),
     SignAlgorithm = proplists:get_value(?SIGNING_ALGORITHM_KEY, SignDesc),
-    case lists:member(SignVersion, ?SIGNING_VERSIONS) of
+    case accepted_signing_version(SignVersion) of
         true ->
             [{algorithm, SignAlgorithm}, {version, SignVersion}];
         false ->

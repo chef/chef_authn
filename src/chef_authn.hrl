@@ -42,10 +42,11 @@
 -define(DEFAULT_SERVER_API_VERSION, 0).
 
 %% version 1.2 incorporates the related but slightly different RSA PKCS 1.5 SHA+RSA signing method
--define(SIGNING_VERSIONS, [?SIGNING_VERSION_V1_0,
-                           ?SIGNING_VERSION_V1_1,
-                           ?SIGNING_VERSION_V1_2,
-                           ?SIGNING_VERSION_V1_3]).
+-define(SIGNING_VERSIONS, [{?SIGNING_VERSION_V1_0, [?SIGNING_ALGORITHM_SHA1]},
+                           {?SIGNING_VERSION_V1_1, [?SIGNING_ALGORITHM_SHA1]},
+                           {?SIGNING_VERSION_V1_2, [?SIGNING_ALGORITHM_SHA1]},
+                           {?SIGNING_VERSION_V1_3, [?SIGNING_ALGORITHM_SHA1,
+                                                    ?SIGNING_ALGORITHM_SHA256]}]).
 
 -define(SIGNING_VERSION_KEY, <<"version">>).
 
