@@ -41,7 +41,9 @@
 %% we assume a default value.
 -define(DEFAULT_SERVER_API_VERSION, 0).
 
-%% version 1.2 incorporates the related but slightly different RSA PKCS 1.5 SHA+RSA signing method
+%% This structure defines allowable hashing algorithms for each signing version.
+%% The frist one in the list is considered to be the default if none is
+%% specified
 -define(SIGNING_VERSIONS, [{?SIGNING_VERSION_V1_0, [?SIGNING_ALGORITHM_SHA1]},
                            {?SIGNING_VERSION_V1_1, [?SIGNING_ALGORITHM_SHA1]},
                            {?SIGNING_VERSION_V1_2, [?SIGNING_ALGORITHM_SHA1]},

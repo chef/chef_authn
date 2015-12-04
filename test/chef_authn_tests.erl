@@ -800,6 +800,66 @@ validate_headers_test_() ->
                    chef_authn:validate_headers(fun(<<_X/binary>>) -> undefined end, 1)) ]
         ++ MissingOneTests.
 
+bad_signing_protocol_test() ->
+    {ok, RawKey} = file:read_file("../test/private_key"),
+    Private_key = chef_authn:extract_private_key(RawKey),
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
+    Alg = chef_authn:default_signing_algorithm(),
+
+    %% v1.0 is chosen here just to make the request. We're going to replace
+    %% it with other things.
+    Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+                                       ?request_time_erlang, ?path, Alg, ?SIGNING_VERSION_V1_0),
+    %% We convert here back into binary keys in headers since that
+    %% is what we'd get when parsing the received headers over the wire
+    Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
+    GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
+    % force time skew to allow a request to be processed 'now'
+    TimeSkew = make_skew_time(),
+
+    [
+     {"no_authn: incorrect algorithm for v1.0",
+      fun() ->
+              Headers2 = lists:keyreplace(<<"X-Ops-Sign">>, 1, Headers,
+                                          {<<"X-Ops-Sign">>, <<"algorithm=foo;version=1.0">>}),
+              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
+              ?assertEqual({no_authn, bad_sign_desc},
+                           chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
+                                                     ?body, Public_key, TimeSkew))
+      end
+     },
+     {"no_authn: incorrect algorithm for v1.1",
+      fun() ->
+              Headers2 = lists:keyreplace(<<"X-Ops-Sign">>, 1, Headers,
+                                          {<<"X-Ops-Sign">>, <<"algorithm=foo;version=1.1">>}),
+              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
+              ?assertEqual({no_authn, bad_sign_desc},
+                           chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
+                                                     ?body, Public_key, TimeSkew))
+      end
+     },
+     {"no_authn: incorrect algorithm for v1.2",
+      fun() ->
+              Headers2 = lists:keyreplace(<<"X-Ops-Sign">>, 1, Headers,
+                                          {<<"X-Ops-Sign">>, <<"algorithm=foo;version=1.2">>}),
+              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
+              ?assertEqual({no_authn, bad_sign_desc},
+                           chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
+                                                     ?body, Public_key, TimeSkew))
+      end
+     },
+     {"no_authn: incorrect algorithm for v1.3",
+      fun() ->
+              Headers2 = lists:keyreplace(<<"X-Ops-Sign">>, 1, Headers,
+                                          {<<"X-Ops-Sign">>, <<"algorithm=foo;version=1.3">>}),
+              GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
+              ?assertEqual({no_authn, bad_sign_desc},
+                           chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
+                                                     ?body, Public_key, TimeSkew))
+      end
+     }
+    ].
+
 parse_signing_description_1_0_test_() ->
     Cases = [{<<"version=1.0">>, [{<<"version">>, <<"1.0">>}]},
              {undefined, []},

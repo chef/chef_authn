@@ -31,7 +31,7 @@
 
 -include("chef_authn.hrl").
 
--export([default_signing_algorithm/0,
+-export([default_signing_algorithm/1,
          accepted_signing_protocol/2,
          default_signing_version/0,
          accepted_signing_version/1,
@@ -49,6 +49,7 @@
 
 % deprecated
 -export([accepted_signing_algorithm/1,
+         default_signing_algorithm/0,
          hash_string/1,
          hash_file/1
         ]).
@@ -87,9 +88,21 @@
 
 
 %% @doc Return the default signing algorithm
+%% @deprecated use default_signing_algorithm/1
 -spec default_signing_algorithm() -> signing_algorithm().
 default_signing_algorithm() ->
     ?DEFAULT_SIGNING_ALGORITHM.
+
+%% @doc Return the default signing algorithm for the specified Version
+-spec default_signing_algorithm(signing_version()) -> signing_algorithm() | {error, missing_version}.
+default_signing_algorithm(SignVersion) ->
+    case proplists:get_value(SignVersion, ?SIGNING_VERSIONS) of
+        undefined ->
+            {error, missing_version};
+        [Default|SupportedAlgorithms] ->
+            Default
+    end.
+
 
 %% @doc Is the signing algorithm valid?
 %% of {unknown_algorithm, Algorithm}
@@ -344,7 +357,9 @@ create_signature(SignThis, PrivateKey, {SignAlgorithm, ?SIGNING_VERSION_V1_3}) -
 %% @doc Sign an HTTP request without a body (primarily GET)
 %% @deprecated Use sign_request/2 instead.
 sign_request(PrivateKey, User, Method, Time, Path) ->
-    sign_request(PrivateKey, <<"">>, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
+    SignVersion = default_signing_version(),
+    SignAlgorithm = default_signing_algorithm(SignVersion),
+    sign_request(PrivateKey, <<"">>, User, Method, Time, Path, SignAlgorithm, SignVersion).
 
 %% @doc Sign an HTTP request without a body (primarily GET)
 %% @deprecated Use sign_request/2 instead.
@@ -352,7 +367,9 @@ sign_request(PrivateKey, User, Method, Time, Path) ->
                    http_method(), erlang_time() | now, http_path()) ->
                           [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path) ->
-    sign_request(PrivateKey, Body, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
+    SignVersion = default_signing_version(),
+    SignAlgorithm = default_signing_algorithm(SignVersion),
+    sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion).
 
 %% @doc Sign an HTTP request so it can be sent to a Chef server.
 %%
@@ -519,13 +536,21 @@ validate_time_in_bounds(GetHeader, TimeSkew) ->
 validate_sign_description(GetHeader) ->
     SignDesc = parse_signing_description(GetHeader(<<"X-Ops-Sign">>)),
     SignVersion = proplists:get_value(?SIGNING_VERSION_KEY, SignDesc),
-    SignAlgorithm = proplists:get_value(?SIGNING_ALGORITHM_KEY, SignDesc),
-    case accepted_signing_version(SignVersion) of
+    SignAlgorithm = proplists:get_value(?SIGNING_ALGORITHM_KEY, SignDesc, default),
+    case accepted_signing_protocol(SignAlgorithm, SignVersion) of
         true ->
-            [{algorithm, SignAlgorithm}, {version, SignVersion}];
+            [{algorithm, maybe_lookup_sign_algorithm(SignAlgorithm, SignVersion)},
+             {version, SignVersion}];
         false ->
             throw(bad_sign_desc)
     end.
+
+% If a algorithm was not specified, look up the default one for the given version
+-spec maybe_lookup_sign_algorithm(signing_algorithm() | default, signing_version()) -> signing_algorithm().
+maybe_lookup_sign_algorithm(default, SignVersion) ->
+    default_signing_algorithm(SignVersion);
+maybe_lookup_sign_algorithm(SignAlgorithm, SignVersion) ->
+    SignAlgorithm.
 
 %% @doc Determine if a request is valid
 %%
