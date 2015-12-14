@@ -710,7 +710,6 @@ bad_signing_protocol_test() ->
     %% We convert here back into binary keys in headers since that
     %% is what we'd get when parsing the received headers over the wire
     Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
-    GetHeader = fun(X) -> proplists:get_value(X, Headers) end,
     % force time skew to allow a request to be processed 'now'
     TimeSkew = make_skew_time(),
 

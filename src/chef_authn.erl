@@ -108,7 +108,7 @@ default_signing_algorithm(SignVersion) ->
     case signing_protocols_for_version(SignVersion) of
         undefined ->
             {error, missing_version};
-        [Default|SupportedAlgorithms] ->
+        [Default|_SupportedAlgorithms] ->
             Default
     end.
 
@@ -555,7 +555,7 @@ validate_sign_description(GetHeader) ->
 -spec maybe_lookup_sign_algorithm(signing_algorithm() | default, signing_version()) -> signing_algorithm().
 maybe_lookup_sign_algorithm(default, SignVersion) ->
     default_signing_algorithm(SignVersion);
-maybe_lookup_sign_algorithm(SignAlgorithm, SignVersion) ->
+maybe_lookup_sign_algorithm(SignAlgorithm, _SignVersion) ->
     SignAlgorithm.
 
 %% @doc Determine if a request is valid
