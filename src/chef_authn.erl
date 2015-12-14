@@ -86,6 +86,15 @@
 -compile([export_all]).
 -endif.
 
+-spec signing_protocols_for_version(SignVersion :: binary()) -> [signing_algorithm()] | undefined.
+signing_protocols_for_version(SignVersion) when SignVersion =:= ?SIGNING_VERSION_V1_0;
+                                                SignVersion =:= ?SIGNING_VERSION_V1_1;
+                                                SignVersion =:= ?SIGNING_VERSION_V1_2 ->
+    [?SIGNING_ALGORITHM_SHA1];
+signing_protocols_for_version(?SIGNING_VERSION_V1_3) ->
+    [?SIGNING_ALGORITHM_SHA256];
+signing_protocols_for_version(_) ->
+    undefined.
 
 %% @doc Return the default signing algorithm
 %% @deprecated use default_signing_algorithm/1
@@ -94,15 +103,14 @@ default_signing_algorithm() ->
     ?DEFAULT_SIGNING_ALGORITHM.
 
 %% @doc Return the default signing algorithm for the specified Version
--spec default_signing_algorithm(signing_version()) -> signing_algorithm() | {error, missing_version}.
+-spec default_signing_algorithm(SignVersion :: binary()) -> signing_algorithm() | {error, missing_version}.
 default_signing_algorithm(SignVersion) ->
-    case proplists:get_value(SignVersion, ?SIGNING_VERSIONS) of
+    case signing_protocols_for_version(SignVersion) of
         undefined ->
             {error, missing_version};
         [Default|SupportedAlgorithms] ->
             Default
     end.
-
 
 %% @doc Is the signing algorithm valid?
 %% of {unknown_algorithm, Algorithm}
@@ -117,22 +125,21 @@ default_signing_version() ->
     ?SIGNING_VERSION_V1_1.
 
 %% @doc Is the signing version acceptable for chef request.  Returns true if so, else false.
--spec accepted_signing_version(Version :: binary()) -> boolean().
-accepted_signing_version(Version) ->
-    proplists:is_defined(Version, ?SIGNING_VERSIONS).
+-spec accepted_signing_version(SignVersion :: binary()) -> boolean().
+accepted_signing_version(SignVersion) ->
+    signing_protocols_for_version(SignVersion) =/= undefined.
 
 %% @doc Is the signing version and algorithm acceptable for chef request.  Returns true if so, else false.
--spec accepted_signing_protocol(Algorithm :: binary() | default, Version :: binary()) -> boolean().
-accepted_signing_protocol(default, Version) ->
-    accepted_signing_version(Version);
-accepted_signing_protocol(Algorithm, Version) ->
-    case proplists:get_value(Version, ?SIGNING_VERSIONS) of
+-spec accepted_signing_protocol(SignAlgorithm :: binary() | default, SignVersion :: binary()) -> boolean().
+accepted_signing_protocol(default, SignVersion) ->
+    accepted_signing_version(SignVersion);
+accepted_signing_protocol(SignAlgorithm, SignVersion) ->
+    case signing_protocols_for_version(SignVersion) of
         undefined ->
             false;
         SupportedAlgorithms ->
-            lists:member(Algorithm, SupportedAlgorithms)
+            lists:member(SignAlgorithm, SupportedAlgorithms)
     end.
-
 
 -spec process_key({'RSAPublicKey',  binary(), _} |
                   {'RSAPrivateKey', binary(), _} |

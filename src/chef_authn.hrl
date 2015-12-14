@@ -41,14 +41,6 @@
 %% we assume a default value.
 -define(DEFAULT_SERVER_API_VERSION, 0).
 
-%% This structure defines allowable hashing algorithms for each signing version.
-%% The frist one in the list is considered to be the default if none is
-%% specified
--define(SIGNING_VERSIONS, [{?SIGNING_VERSION_V1_0, [?SIGNING_ALGORITHM_SHA1]},
-                           {?SIGNING_VERSION_V1_1, [?SIGNING_ALGORITHM_SHA1]},
-                           {?SIGNING_VERSION_V1_2, [?SIGNING_ALGORITHM_SHA1]},
-                           {?SIGNING_VERSION_V1_3, [?SIGNING_ALGORITHM_SHA256]}]).
-
 -define(SIGNING_VERSION_KEY, <<"version">>).
 
 -define(SIGNING_ALGORITHM_KEY, <<"algorithm">>).
