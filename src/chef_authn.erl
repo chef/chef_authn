@@ -31,8 +31,8 @@
 
 -include("chef_authn.hrl").
 
--export([default_signing_algorithm/0,
-         accepted_signing_algorithm/1,
+-export([default_signing_algorithm/1,
+         accepted_signing_protocol/2,
          default_signing_version/0,
          accepted_signing_version/1,
          extract_public_or_private_key/1,
@@ -48,7 +48,9 @@
          ]).
 
 % deprecated
--export([hash_string/1,
+-export([accepted_signing_algorithm/1,
+         default_signing_algorithm/0,
+         hash_string/1,
          hash_file/1
         ]).
 
@@ -84,14 +86,35 @@
 -compile([export_all]).
 -endif.
 
+-spec signing_protocols_for_version(SignVersion :: binary()) -> [signing_algorithm()] | undefined.
+signing_protocols_for_version(SignVersion) when SignVersion =:= ?SIGNING_VERSION_V1_0;
+                                                SignVersion =:= ?SIGNING_VERSION_V1_1;
+                                                SignVersion =:= ?SIGNING_VERSION_V1_2 ->
+    [?SIGNING_ALGORITHM_SHA1];
+signing_protocols_for_version(?SIGNING_VERSION_V1_3) ->
+    [?SIGNING_ALGORITHM_SHA256];
+signing_protocols_for_version(_) ->
+    undefined.
 
 %% @doc Return the default signing algorithm
+%% @deprecated use default_signing_algorithm/1
 -spec default_signing_algorithm() -> signing_algorithm().
 default_signing_algorithm() ->
     ?DEFAULT_SIGNING_ALGORITHM.
 
+%% @doc Return the default signing algorithm for the specified Version
+-spec default_signing_algorithm(SignVersion :: binary()) -> signing_algorithm() | {error, missing_version}.
+default_signing_algorithm(SignVersion) ->
+    case signing_protocols_for_version(SignVersion) of
+        undefined ->
+            {error, missing_version};
+        [Default|_SupportedAlgorithms] ->
+            Default
+    end.
+
 %% @doc Is the signing algorithm valid?
 %% of {unknown_algorithm, Algorithm}
+%% @deprecated use accepted_signing_protocol/2 instead
 -spec accepted_signing_algorithm(Algorithm :: binary()) -> boolean().
 accepted_signing_algorithm(Algorithm) ->
     Algorithm =:= ?DEFAULT_SIGNING_ALGORITHM.
@@ -102,9 +125,21 @@ default_signing_version() ->
     ?SIGNING_VERSION_V1_1.
 
 %% @doc Is the signing version acceptable for chef request.  Returns true if so, else false.
--spec accepted_signing_version(Version :: binary()) -> boolean().
-accepted_signing_version(Version) ->
-    lists:member(Version, ?SIGNING_VERSIONS).
+-spec accepted_signing_version(SignVersion :: binary()) -> boolean().
+accepted_signing_version(SignVersion) ->
+    signing_protocols_for_version(SignVersion) =/= undefined.
+
+%% @doc Is the signing version and algorithm acceptable for chef request.  Returns true if so, else false.
+-spec accepted_signing_protocol(SignAlgorithm :: binary() | default, SignVersion :: binary()) -> boolean().
+accepted_signing_protocol(default, SignVersion) ->
+    accepted_signing_version(SignVersion);
+accepted_signing_protocol(SignAlgorithm, SignVersion) ->
+    case signing_protocols_for_version(SignVersion) of
+        undefined ->
+            false;
+        SupportedAlgorithms ->
+            lists:member(SignAlgorithm, SupportedAlgorithms)
+    end.
 
 -spec process_key({'RSAPublicKey',  binary(), _} |
                   {'RSAPrivateKey', binary(), _} |
@@ -200,9 +235,8 @@ hash_string(Str, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
                                         SignVersion =:= ?SIGNING_VERSION_V1_2
                                         ->
     base64:encode(crypto:hash(sha, Str));
-hash_string(Str, {SignAlgorithm, SignVersion})
-  when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
-    base64:encode(crypto:hash(openssl_algorithm_name(SignAlgorithm), Str)).
+hash_string(Str, {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
+    base64:encode(crypto:hash(sha256, Str)).
 
 
 -spec(hash_file(pid()) -> sha_hash64()).
@@ -218,8 +252,8 @@ hash_file(F, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
                                     SignVersion =:= ?SIGNING_VERSION_V1_2
                                     ->
     hash_file_finish(F, crypto:hash_init(sha));
-hash_file(F, {SignAlgorithm, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_3 ->
-    hash_file_finish(F, crypto:hash_init(openssl_algorithm_name(SignAlgorithm))).
+hash_file(F, {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
+    hash_file_finish(F, crypto:hash_init(sha256)).
 
 -spec hash_file_finish(file:io_device(), _) -> sha_hash64().
 hash_file_finish(F, Ctx) ->
@@ -298,21 +332,21 @@ canonicalize_request(BodyHash, UserId, Method, Time, Path, SignAlgorithm,
                      end
     end,
     iolist_to_binary(io_lib:format(Format, [canonical_method(Method),
-                                            hash_string(canonical_path(Path), {SignAlgorithm, SignVersion}),
+                                            canonical_path(Path),
                                             BodyHash,
-                                            SignAlgorithm, SignVersion,
+                                            SignVersion,
                                             Time,
                                             CanonicalUserId,
                                             ServerApiVersion])).
 
-
 canonicalize_userid(UserId, {_, SignVersion}=SignInfo)
   when SignVersion =:= ?SIGNING_VERSION_V1_1;
-       SignVersion =:= ?SIGNING_VERSION_V1_2;
-       SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+       SignVersion =:= ?SIGNING_VERSION_V1_2 ->
             hash_string(UserId, SignInfo);
-canonicalize_userid(UserId, {_, ?SIGNING_VERSION_V1_0}) ->
-            UserId.
+canonicalize_userid(UserId, {_, SignVersion})
+  when SignVersion =:= ?SIGNING_VERSION_V1_0;
+       SignVersion =:= ?SIGNING_VERSION_V1_3 ->
+    UserId.
 
 -spec create_signature(binary(), public_key:rsa_private_key(),
                        {signing_algorithm(), signing_version()}) ->  binary().
@@ -321,15 +355,17 @@ create_signature(SignThis, PrivateKey, {_, SignVersion}) when SignVersion =:= ?S
     public_key:encrypt_private(SignThis, PrivateKey);
 create_signature(SignThis, PrivateKey, {_, ?SIGNING_VERSION_V1_2}) ->
     public_key:sign(SignThis, sha, PrivateKey);
-create_signature(SignThis, PrivateKey, {SignAlgorithm, ?SIGNING_VERSION_V1_3}) ->
-    public_key:sign(SignThis, openssl_algorithm_name(SignAlgorithm), PrivateKey).
+create_signature(SignThis, PrivateKey, {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
+    public_key:sign(SignThis, sha256, PrivateKey).
 
 -spec sign_request(public_key:rsa_private_key(), user_id(), http_method(),
                    erlang_time() | now, http_path()) -> [{[any()],[any()]}].
 %% @doc Sign an HTTP request without a body (primarily GET)
 %% @deprecated Use sign_request/2 instead.
 sign_request(PrivateKey, User, Method, Time, Path) ->
-    sign_request(PrivateKey, <<"">>, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
+    SignVersion = default_signing_version(),
+    SignAlgorithm = default_signing_algorithm(SignVersion),
+    sign_request(PrivateKey, <<"">>, User, Method, Time, Path, SignAlgorithm, SignVersion).
 
 %% @doc Sign an HTTP request without a body (primarily GET)
 %% @deprecated Use sign_request/2 instead.
@@ -337,7 +373,9 @@ sign_request(PrivateKey, User, Method, Time, Path) ->
                    http_method(), erlang_time() | now, http_path()) ->
                           [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path) ->
-    sign_request(PrivateKey, Body, User, Method, Time, Path, default_signing_algorithm(), default_signing_version()).
+    SignVersion = default_signing_version(),
+    SignAlgorithm = default_signing_algorithm(SignVersion),
+    sign_request(PrivateKey, Body, User, Method, Time, Path, SignAlgorithm, SignVersion).
 
 %% @doc Sign an HTTP request so it can be sent to a Chef server.
 %%
@@ -504,13 +542,21 @@ validate_time_in_bounds(GetHeader, TimeSkew) ->
 validate_sign_description(GetHeader) ->
     SignDesc = parse_signing_description(GetHeader(<<"X-Ops-Sign">>)),
     SignVersion = proplists:get_value(?SIGNING_VERSION_KEY, SignDesc),
-    SignAlgorithm = proplists:get_value(?SIGNING_ALGORITHM_KEY, SignDesc),
-    case lists:member(SignVersion, ?SIGNING_VERSIONS) of
+    SignAlgorithm = proplists:get_value(?SIGNING_ALGORITHM_KEY, SignDesc, default),
+    case accepted_signing_protocol(SignAlgorithm, SignVersion) of
         true ->
-            [{algorithm, SignAlgorithm}, {version, SignVersion}];
+            [{algorithm, maybe_lookup_sign_algorithm(SignAlgorithm, SignVersion)},
+             {version, SignVersion}];
         false ->
             throw(bad_sign_desc)
     end.
+
+% If a algorithm was not specified, look up the default one for the given version
+-spec maybe_lookup_sign_algorithm(signing_algorithm() | default, signing_version()) -> signing_algorithm().
+maybe_lookup_sign_algorithm(default, SignVersion) ->
+    default_signing_algorithm(SignVersion);
+maybe_lookup_sign_algorithm(SignAlgorithm, _SignVersion) ->
+    SignAlgorithm.
 
 %% @doc Determine if a request is valid
 %%
@@ -610,13 +656,10 @@ verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey, {_, ?SIGN
     true = public_key:verify(Plain, sha, base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId};
 verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey,
-           {SignAlgorithm, ?SIGNING_VERSION_V1_3}) ->
-    true = public_key:verify(Plain, openssl_algorithm_name(SignAlgorithm),
+           {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
+    true = public_key:verify(Plain, sha256,
                              base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId}.
-
-openssl_algorithm_name(<<"sha1">>) -> sha;
-openssl_algorithm_name(<<"sha256">>) -> sha256.
 
 -spec decrypt_sig(binary(), public_key:public_key_data() |
                   public_key:rsa_public_key()) -> binary().
