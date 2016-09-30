@@ -21,10 +21,10 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 
-
 __Behaviours:__ [`gen_server`](gen_server.md).
 
 __Authors:__ Kevin Smith ([`kevin@opscode.com`](mailto:kevin@opscode.com)), Mark Anderson ([`mark@opscode.com`](mailto:mark@opscode.com)).
+
 <a name="index"></a>
 
 ## Function Index ##
@@ -43,13 +43,11 @@ __Authors:__ Kevin Smith ([`kevin@opscode.com`](mailto:kevin@opscode.com)), Mark
 
 `code_change(OldVsn, State, Extra) -> any()`
 
-
 <a name="get_key-1"></a>
 
 ### get_key/1 ###
 
 `get_key(KeyName) -> any()`
-
 
 <a name="handle_call-3"></a>
 
@@ -57,13 +55,11 @@ __Authors:__ Kevin Smith ([`kevin@opscode.com`](mailto:kevin@opscode.com)), Mark
 
 `handle_call(Request, From, State) -> any()`
 
-
 <a name="handle_cast-2"></a>
 
 ### handle_cast/2 ###
 
 `handle_cast(Request, State) -> any()`
-
 
 <a name="handle_info-2"></a>
 
@@ -71,13 +67,11 @@ __Authors:__ Kevin Smith ([`kevin@opscode.com`](mailto:kevin@opscode.com)), Mark
 
 `handle_info(Info, State) -> any()`
 
-
 <a name="init-1"></a>
 
 ### init/1 ###
 
 `init(X1) -> any()`
-
 
 <a name="list_keys-0"></a>
 
@@ -85,13 +79,11 @@ __Authors:__ Kevin Smith ([`kevin@opscode.com`](mailto:kevin@opscode.com)), Mark
 
 `list_keys() -> any()`
 
-
 <a name="reload-0"></a>
 
 ### reload/0 ###
 
 `reload() -> any()`
-
 
 <a name="reload_if_changed-0"></a>
 
@@ -99,13 +91,11 @@ __Authors:__ Kevin Smith ([`kevin@opscode.com`](mailto:kevin@opscode.com)), Mark
 
 `reload_if_changed() -> any()`
 
-
 <a name="start_link-0"></a>
 
 ### start_link/0 ###
 
 `start_link() -> any()`
-
 
 <a name="stats-0"></a>
 
@@ -113,11 +103,9 @@ __Authors:__ Kevin Smith ([`kevin@opscode.com`](mailto:kevin@opscode.com)), Mark
 
 `stats() -> any()`
 
-
 <a name="terminate-2"></a>
 
 ### terminate/2 ###
 
 `terminate(Reason, State) -> any()`
-
 
