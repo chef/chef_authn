@@ -69,11 +69,14 @@
 -type base64_binary() :: <<_:64,_:_*8>>.
 -type public_key_data() :: {cert, base64_binary()} | {key, base64_binary()} | base64_binary().
 
+-type rsa_private_key() :: #'RSAPrivateKey'{}.
+-type rsa_public_key() :: #'RSAPublicKey'{}.
+
 -type key_desc() :: any().
--type public_key_list() :: [{key_desc(), public_key_data() | public_key:rsa_public_key()}].
+-type public_key_list() :: [{key_desc(), public_key_data() | rsa_public_key()}].
 
 -type header_fun() :: fun((header_name()) -> header_value()).
--type sign_parameter() :: {private_key, public_key:rsa_private_key()} |
+-type sign_parameter() :: {private_key, rsa_private_key()} |
                           {body, http_body()} |
                           {user, user_id()} |
                           {method, http_method()} |
@@ -145,8 +148,8 @@ accepted_signing_protocol(SignAlgorithm, SignVersion) ->
                   {'RSAPrivateKey', binary(), _} |
                   {'PrivateKeyInfo', _, _}       |
                   {'SubjectPublicKeyInfo', _, _}) ->
-                         public_key:rsa_public_key() |
-                         public_key:rsa_private_key() |
+                         rsa_public_key() |
+                         rsa_private_key() |
                          {error, bad_key}.
 process_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
     public_key:pem_entry_decode(PubEntry);
@@ -176,8 +179,8 @@ process_key({'PrivateKeyInfo', _, _} = Entry) ->
 %% error tuple). The PEM can contain an RSA public key in PKCS1, SPKI (X509), or an X509
 %% certificate wrapping an SPKI formatted key. Note that private keys will not be extracted
 %% from X509 certificate data.
--spec extract_public_or_private_key(binary()) -> #'RSAPublicKey'{}  |
-                                                 #'RSAPrivateKey'{} |
+-spec extract_public_or_private_key(binary()) -> rsa_public_key()  |
+                                                 rsa_private_key() |
                                                  {error, bad_key}.
 extract_public_or_private_key(RawKey) ->
     try
@@ -188,7 +191,7 @@ extract_public_or_private_key(RawKey) ->
             {error, bad_key}
     end.
 
--spec extract_public_key(binary()) -> #'RSAPublicKey'{} | {error, bad_key}.
+-spec extract_public_key(binary()) -> rsa_public_key() | {error, bad_key}.
 extract_public_key(RawKey) ->
     case extract_public_or_private_key(RawKey) of
         #'RSAPublicKey'{} = Key ->
@@ -197,7 +200,7 @@ extract_public_key(RawKey) ->
             {error, bad_key}
     end.
 
--spec extract_private_key(binary()) -> #'RSAPrivateKey'{} | {error, bad_key}.
+-spec extract_private_key(binary()) -> rsa_private_key() | {error, bad_key}.
 extract_private_key(RawKey) ->
     case extract_public_or_private_key(RawKey) of
         #'RSAPrivateKey'{} = Key ->
@@ -348,7 +351,7 @@ canonicalize_userid(UserId, {_, SignVersion})
        SignVersion =:= ?SIGNING_VERSION_V1_3 ->
     UserId.
 
--spec create_signature(binary(), public_key:rsa_private_key(),
+-spec create_signature(binary(), rsa_private_key(),
                        {signing_algorithm(), signing_version()}) ->  binary().
 create_signature(SignThis, PrivateKey, {_, SignVersion}) when SignVersion =:= ?SIGNING_VERSION_V1_0;
                                                          SignVersion =:= ?SIGNING_VERSION_V1_1 ->
@@ -358,7 +361,7 @@ create_signature(SignThis, PrivateKey, {_, ?SIGNING_VERSION_V1_2}) ->
 create_signature(SignThis, PrivateKey, {?SIGNING_ALGORITHM_SHA256, ?SIGNING_VERSION_V1_3}) ->
     public_key:sign(SignThis, sha256, PrivateKey).
 
--spec sign_request(public_key:rsa_private_key(), user_id(), http_method(),
+-spec sign_request(rsa_private_key(), user_id(), http_method(),
                    erlang_time() | now, http_path()) -> [{[any()],[any()]}].
 %% @doc Sign an HTTP request without a body (primarily GET)
 %% @deprecated Use sign_request/2 instead.
@@ -369,7 +372,7 @@ sign_request(PrivateKey, User, Method, Time, Path) ->
 
 %% @doc Sign an HTTP request without a body (primarily GET)
 %% @deprecated Use sign_request/2 instead.
--spec sign_request(public_key:rsa_private_key(), http_body(), user_id(),
+-spec sign_request(rsa_private_key(), http_body(), user_id(),
                    http_method(), erlang_time() | now, http_path()) ->
                           [{[any()],[any()]}].
 sign_request(PrivateKey, Body, User, Method, Time, Path) ->
@@ -389,7 +392,7 @@ sign_request(PrivateKey, Body, User, Method, Time, Path) ->
 %% have binary keys (as returned from the ejson/jiffy parsing routines
 %%
 %% @deprecated Use sign_request/2 instead.
--spec sign_request(public_key:rsa_private_key(), http_body(), user_id(),
+-spec sign_request(rsa_private_key(), http_body(), user_id(),
                    http_method(), erlang_time() | now, http_path(),
                    signing_algorithm(), signing_version()) ->
                           [{[any()],[any()]}].
@@ -574,7 +577,7 @@ maybe_lookup_sign_algorithm(SignAlgorithm, _SignVersion) ->
                                 http_method(),
                                 http_path(),
                                 http_body(),
-                                public_key_data() | public_key:rsa_public_key(),
+                                public_key_data() | rsa_public_key(),
                                 time_skew()) ->
                        {name, user_id()} | {name, user_id(), key_desc()} | {no_authn, Reason::term()}.
 authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
@@ -589,7 +592,7 @@ authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
                    http_method(),
                    http_path(),
                    http_body(),
-                   public_key_data() | public_key:rsa_public_key() | public_key_list(),
+                   public_key_data() | rsa_public_key() | public_key_list(),
                    time_skew())
                   ->  {name, user_id()} | {name, user_id(), key_desc()}.
 
@@ -608,7 +611,7 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
 
 
 -spec verify_sig_or_sigs(binary(), binary(), binary(), binary(), binary(),
-                         [{key_desc(), public_key_data() | public_key:rsa_public_key()}], {binary(), binary()}) ->
+                         [{key_desc(), public_key_data() | rsa_public_key()}], {binary(), binary()}) ->
                                 {name, user_id()} | {name, user_id(), key_desc()}.
 verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId,  [Head | _] = KeyData, SignInfo)
   when is_tuple(Head) ->
@@ -623,7 +626,7 @@ verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, KeyData, SignI
 %% what we are repeating each step
 %%
 -spec verify_sigs(binary(), binary(), binary(), binary(), binary(),
-                  [{key_desc(), public_key_data() | public_key:rsa_public_key()}], {binary(), binary()}) ->
+                  [{key_desc(), public_key_data() | rsa_public_key()}], {binary(), binary()}) ->
                          {name, user_id(), key_desc()}.
 
 verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey}], SignInfo) ->
@@ -639,7 +642,7 @@ verify_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, [{KeyId, PubKey} | Re
     end.
 
 -spec verify_sig(binary(), binary(), binary(), binary(), binary(),
-                 public_key_data() | public_key:rsa_public_key(), {binary(), binary()}) ->
+                 public_key_data() | rsa_public_key(), {binary(), binary()}) ->
                         {name, user_id()}.
 
 verify_sig(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, {_, SignVersion})
@@ -661,8 +664,7 @@ verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey,
                              base64:decode(AuthSig), decode_key_data(PublicKey)),
     {name, UserId}.
 
--spec decrypt_sig(binary(), public_key:public_key_data() |
-                  public_key:rsa_public_key()) -> binary().
+-spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary().
 decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
         public_key:decrypt_public(base64:decode(Sig), PK);
 decrypt_sig(Sig, KeyData) ->
@@ -686,7 +688,7 @@ parse_signing_description(Desc) ->
     [ {Key, Value} ||
         [Key, Value] <- [ re:split(KV, "=") || KV <- re:split(Desc, ";") ] ].
 
--spec decode_key_data(public_key_data()) -> public_key:rsa_public_key().
+-spec decode_key_data(public_key_data()) -> rsa_public_key().
 %% Decode a Base64 encoded public key which is either
 %% wrapped in a certificate or a public key which can be in
 %% PKCS1 or SPKI format. The PKCS1 format is deprecated within Chef, but
@@ -716,8 +718,7 @@ key_type(<<"-----BEGIN RSA PUBLIC KEY", _Bin/binary>>) ->
 
 -spec decode_public_key(binary() |
                       {'RSAPublicKey', binary(), _} |
-                      {'SubjectPublicKeyInfo', _, _}) ->
-                               public_key:rsa_public_key().
+                      {'SubjectPublicKeyInfo', _, _}) -> rsa_public_key().
 decode_public_key({'RSAPublicKey', Der, _}) ->
     public_key:der_decode('RSAPublicKey', Der);
 decode_public_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
@@ -726,7 +727,7 @@ decode_public_key(Bin) when is_binary(Bin) ->
     [Decode] = public_key:pem_decode(Bin),
     decode_public_key(Decode).
 
--spec decode_cert(binary()) -> public_key:rsa_public_key().
+-spec decode_cert(binary()) -> rsa_public_key().
 %% der_decode only spec's term
 %% decode a Base64 encoded certificate and return the public key
 decode_cert(Bin) ->
