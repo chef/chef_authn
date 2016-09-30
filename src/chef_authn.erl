@@ -40,9 +40,6 @@
          extract_public_key/1,
          extract_pem_encoded_public_key/1,
          sign_request/2,
-         sign_request/5,
-         sign_request/6,
-         sign_request/8,
          authenticate_user_request/6,
          validate_headers/2
          ]).
@@ -51,7 +48,10 @@
 -export([accepted_signing_algorithm/1,
          default_signing_algorithm/0,
          hash_string/1,
-         hash_file/1
+         hash_file/1,
+         sign_request/5,
+         sign_request/6,
+         sign_request/8
         ]).
 
 -include_lib("public_key/include/public_key.hrl").
