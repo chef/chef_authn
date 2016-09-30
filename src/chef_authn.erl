@@ -75,7 +75,7 @@
 -type key_desc() :: any().
 -type public_key_list() :: [{key_desc(), public_key_data() | rsa_public_key()}].
 
--type header_fun() :: fun((header_name()) -> header_value()).
+-type header_fun() :: undefined | fun((header_name()) -> header_value()).
 -type sign_parameter() :: {private_key, rsa_private_key()} |
                           {body, http_body()} |
                           {user, user_id()} |
