@@ -420,7 +420,7 @@ verify_sig_v1_2_test() ->
 verify_sig_v1_3_sha256_test() ->
     Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_3_SHA256),
     Plain = ?expected_sign_string_v13_sha256,
-    {ok, Public_key} = file:read_file("test/example_cert.pem"),
+    {ok, Public_key} = file:read_file("../test/example_cert.pem"),
     ?assertEqual({name,<<"spec-user">>},
                  chef_authn:verify_sig(Plain, ignore, ignore,
                                        Sig,
