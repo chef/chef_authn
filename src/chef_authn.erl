@@ -162,7 +162,12 @@ process_key({'Certificate', _Der, _} = CertEntry) ->
     Cert = public_key:pem_entry_decode(CertEntry),
     TbsCert = Cert#'Certificate'.tbsCertificate,
     Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
-    {0, KeyDer} = Spki#'SubjectPublicKeyInfo'.subjectPublicKey,
+    KeyDer = case Spki#'SubjectPublicKeyInfo'.subjectPublicKey of
+                 {0, KeyDerEncoded} -> %% OTP 17
+                     KeyDerEncoded;
+                 KeyDerEncoded ->      %% OTP 18+
+                     KeyDerEncoded
+             end,
     public_key:der_decode('RSAPublicKey', KeyDer);
 process_key({'PrivateKeyInfo', _, _} = Entry) ->
     KeyInfo = public_key:pem_entry_decode(Entry),
