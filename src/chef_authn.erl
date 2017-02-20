@@ -577,7 +577,7 @@ maybe_lookup_sign_algorithm(SignAlgorithm, _SignVersion) ->
                                 http_method(),
                                 http_path(),
                                 http_body(),
-                                public_key_data() | rsa_public_key(),
+                                public_key_data() | rsa_public_key() | public_key_list(),
                                 time_skew()) ->
                        {name, user_id()} | {name, user_id(), key_desc()} | {no_authn, Reason::term()}.
 authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
@@ -611,7 +611,7 @@ do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew)
 
 
 -spec verify_sig_or_sigs(binary(), binary(), binary(), binary(), binary(),
-                         [{key_desc(), public_key_data() | rsa_public_key()}], {binary(), binary()}) ->
+                         public_key_list(), {binary(), binary()}) ->
                                 {name, user_id()} | {name, user_id(), key_desc()}.
 verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId,  [Head | _] = KeyData, SignInfo)
   when is_tuple(Head) ->
