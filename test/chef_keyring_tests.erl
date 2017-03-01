@@ -31,6 +31,7 @@ test_dir() ->
 unset_chef_authn_env() ->
     application:unset_env(chef_authn, keyring),
     application:unset_env(chef_authn, keyring_file),
+    application:unset_env(chef_authn, secrets_module),
     application:unset_env(chef_authn, keyring_dir).
 
 assert_public_key(#'RSAPublicKey'{} = Key) ->
@@ -125,6 +126,40 @@ load_file_test_() ->
 
                {ok, Key2} = chef_keyring:get_key(test1),
                ?assertEqual(element(1,Key2), 'RSAPublicKey')
+       end}
+     ]
+    }.
+
+load_secrets_module_test_() ->
+    {setup,
+     fun() ->
+             unset_chef_authn_env(),
+             application:set_env(chef_authn, secrets_module,
+                                 {chef_secrets, get,
+                                  [{pivotal, [<<"chef-server">>, <<"superuser_key">>]},
+                                   {webui, [<<"chef-server">>, <<"webui_key">>]}]}),
+             error_logger:tty(false),
+             {ok, Pem} = file:read_file(test_dir("private_key")),
+             meck:new(chef_secrets, [non_strict]),
+             meck:expect(chef_secrets, get,
+                         fun(<<"chef-server">>, <<"superuser_key">>) -> {ok, Pem};
+                            (<<"chef-server">>, <<"webui_key">>) -> {ok, Pem}
+                         end),
+             chef_keyring:start_link(),
+             chef_keyring:reload()
+     end,
+     fun(_) ->
+             meck:unload(chef_secrets),
+             unset_chef_authn_env()
+
+     end,
+     [
+      {"Test basic secrets_module secrets getting",
+       fun() ->
+               {ok, Key0} = chef_keyring:get_key(pivotal),
+               {ok, Key1} = chef_keyring:get_key(webui),
+               ?assertEqual(element(1,Key0), 'RSAPrivateKey'),
+               ?assertEqual(element(1,Key1), 'RSAPrivateKey')
        end}
      ]
     }.

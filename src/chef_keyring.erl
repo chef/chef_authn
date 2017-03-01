@@ -152,8 +152,9 @@ code_change(_OldVsn, State, _Extra) ->
 load(State) ->
     {Dir, DirModTime} = check_keyring_dir(),
     KeyRing0 = load_keyring_from_env(State#state.keys),
-    KeyRing1 = load_keyring_from_dir(Dir, KeyRing0),
-    State#state{keys=KeyRing1,
+    KeyRing1 = load_keyring_from_callback(KeyRing0),
+    KeyRing2 = load_keyring_from_dir(Dir, KeyRing1),
+    State#state{keys = KeyRing2,
                 watch_dir = Dir,
                 dir_mod_time = DirModTime,
                 last_updated = os:timestamp()}.
@@ -166,7 +167,32 @@ load_keyring_from_env(OldKeys) ->
             {ok, Keys} = load_keyring_files(KeyRing, OldKeys),
             Keys
     end.
-    
+
+load_keyring_from_callback(PresentKeys) ->
+    case envy:get(chef_authn, secrets_module, undefined, any) of
+        {M, F, NamedArguments} when is_atom(M) andalso
+                                    is_atom(F) andalso
+                                    is_list(NamedArguments) ->
+            key_from_callback({M, F}, NamedArguments, PresentKeys);
+        undefined ->
+            PresentKeys;
+        AnythingElse ->
+            error_logger:error_msg("Unknown secrets_module configuration ~p~n", [AnythingElse]),
+            PresentKeys
+    end.
+
+key_from_callback(_, [], Dict) ->
+    Dict;
+key_from_callback({M, F} = Fun, [{Name, Args}|Tail], Dict) ->
+    case erlang:apply(M, F, Args) of
+        {ok, Content} ->
+            Dict1 = dict:store(Name, chef_authn:extract_private_key(Content), Dict),
+            key_from_callback(Fun, Tail, Dict1);
+        Error ->
+            error_logger:error_msg("Error reading secret ~p for ~p: ~p~n", [Args, Name, Error]),
+            key_from_callback(Fun, Tail, Dict)
+    end.
+
 check_keyring_dir() ->
     Path = envy:get(chef_authn, keyring_dir, undef, string),
     {Path, modtime(Path)}.
