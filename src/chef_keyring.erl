@@ -186,7 +186,7 @@ key_from_callback(_, [], Dict) ->
 key_from_callback({M, F} = Fun, [{Name, Args}|Tail], Dict) ->
     case erlang:apply(M, F, Args) of
         {ok, Content} ->
-            Dict1 = dict:store(Name, chef_authn:extract_private_key(Content), Dict),
+            Dict1 = dict:store(Name, chef_authn:extract_public_or_private_key(Content), Dict),
             key_from_callback(Fun, Tail, Dict1);
         Error ->
             error_logger:error_msg("Error reading secret ~p for ~p: ~p~n", [Args, Name, Error]),
@@ -256,4 +256,3 @@ modtime(File) ->
             erlang:localtime_to_universaltime(MTime);
         _ -> error
     end.
-
