@@ -83,7 +83,13 @@
                           {time, erlang_time() | now} |
                           {path, http_path()} |
                           {get_header, header_fun()}.
-
+-ifdef(otp_18_plus).
+-define(get_key_der(X), X).
+-define(ensure_binary(X), X).
+-else.
+-define(get_key_der(X), {0, KeyDerEncoded} = X, KeyDerEncoded).
+-define(ensure_binary(X), erlang:list_to_binary(X)).
+-endif.
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -161,21 +167,14 @@ process_key({'Certificate', _Der, _} = CertEntry) ->
     %% NOTE: assumes the certificate contains public key info and only extracts that.
     Cert = public_key:pem_entry_decode(CertEntry),
     TbsCert = Cert#'Certificate'.tbsCertificate,
-    Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
-    KeyDer = case Spki#'SubjectPublicKeyInfo'.subjectPublicKey of
-                 {0, KeyDerEncoded} -> %% OTP 17
-                     KeyDerEncoded;
-                 KeyDerEncoded ->      %% OTP 18+
-                     KeyDerEncoded
-             end,
-    public_key:der_decode('RSAPublicKey', KeyDer);
+    public_key_from_spki(TbsCert#'TBSCertificate'.subjectPublicKeyInfo);
 process_key({'PrivateKeyInfo', _, _} = Entry) ->
     KeyInfo = public_key:pem_entry_decode(Entry),
     KeyAlgorithmInfo = KeyInfo#'PrivateKeyInfo'.privateKeyAlgorithm,
     case KeyAlgorithmInfo of
         #'PrivateKeyInfo_privateKeyAlgorithm'{algorithm=?'rsaEncryption'} ->
             PrivateKey = KeyInfo#'PrivateKeyInfo'.privateKey,
-            public_key:der_decode('RSAPrivateKey', list_to_binary(PrivateKey));
+            public_key:der_decode('RSAPrivateKey', ?ensure_binary(PrivateKey));
         _ ->
             {error, bad_key}
     end.
@@ -738,6 +737,8 @@ decode_public_key(Bin) when is_binary(Bin) ->
 decode_cert(Bin) ->
     Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(Bin))),
     TbsCert = Cert#'Certificate'.tbsCertificate,
-    Spki = TbsCert#'TBSCertificate'.subjectPublicKeyInfo,
-    {0, KeyDer} = Spki#'SubjectPublicKeyInfo'.subjectPublicKey,
+    public_key_from_spki(TbsCert#'TBSCertificate'.subjectPublicKeyInfo).
+
+public_key_from_spki(Spki) ->
+    KeyDer = ?get_key_der(Spki#'SubjectPublicKeyInfo'.subjectPublicKey),
     public_key:der_decode('RSAPublicKey', KeyDer).
