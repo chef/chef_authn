@@ -20,7 +20,13 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("public_key/include/public_key.hrl").
 
--define(LINK, "../test/reload_test.pem").
+-define(LINK, test_dir("reload_test.pem")).
+
+test_dir(File) ->
+    filename:join(test_dir(), File).
+
+test_dir() ->
+    filename:join(code:priv_dir(chef_authn), "../test").
 
 unset_chef_authn_env() ->
     application:unset_env(chef_authn, keyring),
@@ -41,8 +47,8 @@ lookup_test_() ->
     {foreach,
      fun() ->
              application:set_env(chef_authn, keyring,
-                                 [{test1, "../test/testkey.pem"}]),
-             application:set_env(chef_authn, keyring_dir, "../test"),
+                                 [{test1, test_dir("testkey.pem")}]),
+             application:set_env(chef_authn, keyring_dir, test_dir()),
              error_logger:tty(false),
              chef_keyring:start_link()
      end,
@@ -105,15 +111,15 @@ load_file_test_() ->
       {"Test key file reloading",
        fun() ->
                application:set_env(chef_authn, keyring,
-                                   [{test1, "../test/testkey.pem"}]),
+                                   [{test1, test_dir("testkey.pem")}]),
 
                application:set_env(chef_authn, keyring,
-                                   [{test1, "../test/testkey.pem"}]),
+                                   [{test1, test_dir("testkey.pem")}]),
                {ok, Key1} = chef_keyring:get_key(test1),
                ?assertEqual(element(1,Key1), 'RSAPrivateKey'),
 
                application:set_env(chef_authn, keyring,
-                                   [{test1, "../test/webui_pub.pem"}]),
+                                   [{test1, test_dir("webui_pub.pem")}]),
 
                chef_keyring:reload(),
 
@@ -127,7 +133,7 @@ load_dir_test_() ->
     {setup,
      fun() ->
              unset_chef_authn_env(),
-             application:set_env(chef_authn, keyring_dir, "../test"),
+             application:set_env(chef_authn, keyring_dir, test_dir()),
              error_logger:tty(false),
              chef_keyring:start_link(),
              chef_keyring:reload()
@@ -147,7 +153,7 @@ reload_changed_dir_test_() ->
     {setup,
      fun() ->
              unset_chef_authn_env(),
-             application:set_env(chef_authn, keyring_dir, "../test"),
+             application:set_env(chef_authn, keyring_dir, test_dir()),
              file:delete(?LINK),
              error_logger:tty(false),
              chef_keyring:start_link(),
@@ -157,7 +163,7 @@ reload_changed_dir_test_() ->
              file:delete(?LINK)
      end,
      [
-      {"Test basic reloading of dir when adding file: " ?LINK,
+      {"Test basic reloading of dir when adding file",
        fun() ->
                %% Check that key is unknown in initial state
                Stats1 = chef_keyring:stats(),
@@ -174,7 +180,7 @@ reload_changed_dir_test_() ->
                ?assertEqual({error, unknown_key}, Result2),
 
                %% Add a new key, trigger a reload, and verify things have changed.
-               file:make_symlink("../test/testkey.pem", ?LINK),
+               file:make_symlink(test_dir("testkey.pem"), ?LINK),
                timer:sleep(1000), %% I'm ashamed, but directory times are second resolution
                chef_keyring:reload_if_changed(),
                Stats3 = chef_keyring:stats(),
@@ -191,7 +197,7 @@ reload_changed_dir2_test_() ->
      fun() ->
              unset_chef_authn_env(),
              application:set_env(chef_authn, keyring,
-                                 [{test1, "../test/testkey.pem"}]),
+                                 [{test1, test_dir("testkey.pem")}]),
              file:delete(?LINK),
              error_logger:tty(false),
              chef_keyring:start_link(),
@@ -201,7 +207,7 @@ reload_changed_dir2_test_() ->
              file:delete(?LINK)
      end,
      [
-      {"Test basic reloading when no dir: " ?LINK,
+      {"Test basic reloading when no dir",
        fun() ->
                %% Check that key is unknown in initial state
                Stats1 = chef_keyring:stats(),
