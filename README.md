@@ -1,18 +1,28 @@
 # Chef Authentication
 
-This is the authentication layer for chef.
+This is an erlang library for authenticating HTTP requests made using
+Chef's header signing protocol. See Chef RFC 065 for more details:
 
-Chef is a system integration framework written in erlang and ruby and designed to bring the benefits of configuration management to your entire infrastructure.
+    https://github.com/chef/chef-rfc/blob/master/rfc065-sign-v1.3.md
 
-This README focuses on developers who want to modify Chef source code. For users who just want to run the latest and greatest Chef development version in their environment, see: <https://docs.chef.io/>
+Additionally, it contains other useful libraries for generating and
+managing keys.
 
 ## Contributing
 
-For information on contributing to this project see <https://github.com/chef/chef/blob/master/CONTRIBUTING.md>
+For information on contributing to this project
+see <https://github.com/chef/chef/blob/master/CONTRIBUTING.md>
+
+## Development
+
+This project uses eunit and dialyzer for testing and
+type-checking. You can run both locally with:
+
+    make travis
 
 ## License
 
-- Copyright:: 2011-2016 Chef Software, Inc.
+- Copyright:: 2011-2017 Chef Software, Inc.
 - License:: Apache License, Version 2.0
 
 ```text
