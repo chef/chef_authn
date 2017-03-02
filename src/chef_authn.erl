@@ -83,11 +83,6 @@
                           {time, erlang_time() | now} |
                           {path, http_path()} |
                           {get_header, header_fun()}.
--ifdef(otp_18_plus).
--define(ensure_binary(X), X).
--else.
--define(ensure_binary(X), erlang:list_to_binary(X)).
--endif.
 
 -ifdef(TEST).
 -compile([export_all]).
@@ -172,7 +167,7 @@ process_key({'PrivateKeyInfo', _, _} = Entry) ->
     case KeyAlgorithmInfo of
         #'PrivateKeyInfo_privateKeyAlgorithm'{algorithm=?'rsaEncryption'} ->
             PrivateKey = KeyInfo#'PrivateKeyInfo'.privateKey,
-            public_key:der_decode('RSAPrivateKey', ?ensure_binary(PrivateKey));
+            public_key:der_decode('RSAPrivateKey', ensure_binary(PrivateKey));
         _ ->
             {error, bad_key}
     end.
@@ -743,3 +738,6 @@ public_key_from_spki(Spki) ->
 
 get_key_der({0, Bin}) when is_binary(Bin)-> Bin;
 get_key_der(Bin) when is_binary(Bin)-> Bin.
+
+ensure_binary(Bin) when is_binary(Bin) -> Bin;
+ensure_binary(List) when is_list(List) -> erlang:list_to_binary(List).
