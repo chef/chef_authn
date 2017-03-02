@@ -126,11 +126,32 @@
                             1
                            ]))).
 
+-define(assertPublicKey(Key),
+    ?assertMatch(#'RSAPublicKey'{}, Key),
+    ?assert(Key#'RSAPublicKey'.modulus > 0)).
+
+-define(assertPrivateKey(Key),
+    ?assertMatch(#'RSAPrivateKey'{}, Key),
+    ?assert(Key#'RSAPrivateKey'.prime1 > 0)).
+
 test_dir(File) ->
     filename:join(test_dir(), File).
 
 test_dir() ->
     filename:join(code:priv_dir(chef_authn), "../test/").
+
+private_key() -> content(test_dir("private_key")).
+private_key_pkcs8() -> content(test_dir("private_key_pkcs8")).
+private_key_pkcs8_dsa() -> content(test_dir("private_key_pkcs8_dsa")).
+example_cert() -> content(test_dir("example_cert.pem")).
+spki_public() -> content(test_dir("spki_public.pem")).
+webui_pub() -> content(test_dir("webui_pub.pem")).
+platform_public_key_example() -> content(test_dir("platform_public_key_example.pem")).
+other_cert() -> content(test_dir("other_cert.pem")).
+
+content(Path) ->
+    {ok, Key} = file:read_file(Path),
+    Key.
 
 accepted_signing_protocol_test() ->
     %% All signing versions should accept default
@@ -197,7 +218,7 @@ hashed_body_test_helper([{SignInfo, ExpectedHash} | T]) ->
     ?assertEqual(ExpectedHash, chef_authn:hashed_body(?body, SignInfo)),
     {ok, Fd} = file:open(test_dir("example_cert.pem"), [read]),
     FileHash = chef_authn:hashed_body(Fd, SignInfo),
-    {ok, Bin} = file:read_file(test_dir("example_cert.pem")),
+    Bin = example_cert(),
     ContentHashFromBin = chef_authn:hashed_body(Bin, SignInfo),
     ContentHashFromList = chef_authn:hashed_body(binary_to_list(Bin), SignInfo),
     ?assert(is_binary(FileHash)),
@@ -278,8 +299,7 @@ canonicalize_request_v_1_3_sha256_test() ->
 sign_request_1_0_test() ->
     Algorithm = chef_authn:default_signing_algorithm(),
     Version = <<"1.0">>,
-    {ok, RawKey} = file:read_file(test_dir("private_key")),
-    Private_key = chef_authn:extract_private_key(RawKey),
+    PrivateKey = chef_authn:extract_private_key(private_key()),
     AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_0) end,
     EXPECTED_SIGN_RESULT =
         [
@@ -294,15 +314,14 @@ sign_request_1_0_test() ->
          {"X-Ops-Authorization-5", AuthLine(5)},
          {"X-Ops-Authorization-6", AuthLine(6)}
         ],
-    Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+    Sig = chef_authn:sign_request(PrivateKey, ?body, ?user, <<"post">>,
                                   ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
 sign_request_1_1_test() ->
     Algorithm = chef_authn:default_signing_algorithm(),
     Version = <<"1.1">>,
-    {ok, RawKey} = file:read_file(test_dir("private_key")),
-    Private_key = chef_authn:extract_private_key(RawKey),
+    PrivateKey = chef_authn:extract_private_key(private_key()),
     AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_1) end,
     EXPECTED_SIGN_RESULT =
         [
@@ -317,15 +336,14 @@ sign_request_1_1_test() ->
          {"X-Ops-Authorization-5", AuthLine(5)},
          {"X-Ops-Authorization-6", AuthLine(6)}
         ],
-    Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+    Sig = chef_authn:sign_request(PrivateKey, ?body, ?user, <<"post">>,
                                   ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
 sign_request_1_2_test() ->
     Algorithm = chef_authn:default_signing_algorithm(),
     Version = <<"1.2">>,
-    {ok, RawKey} = file:read_file(test_dir("private_key")),
-    Private_key = chef_authn:extract_private_key(RawKey),
+    PrivateKey = chef_authn:extract_private_key(private_key()),
     AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_2) end,
     EXPECTED_SIGN_RESULT =
         [
@@ -340,15 +358,14 @@ sign_request_1_2_test() ->
          {"X-Ops-Authorization-5", AuthLine(5)},
          {"X-Ops-Authorization-6", AuthLine(6)}
         ],
-    Sig = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
-                       ?request_time_erlang, ?path, Algorithm, Version),
+    Sig = chef_authn:sign_request(PrivateKey, ?body, ?user, <<"post">>,
+                                  ?request_time_erlang, ?path, Algorithm, Version),
     ?assertEqual(EXPECTED_SIGN_RESULT, Sig).
 
 sign_request_1_3_sha256_test() ->
     Algorithm = <<"sha256">>,
     Version = <<"1.3">>,
-    {ok, RawKey} = file:read_file(test_dir("private_key")),
-    Private_key = chef_authn:extract_private_key(RawKey),
+    PrivateKey = chef_authn:extract_private_key(private_key()),
     AuthLine = fun(I) -> lists:nth(I, ?X_OPS_AUTHORIZATION_LINES_V1_3_SHA256) end,
     EXPECTED_SIGN_RESULT =
         [
@@ -371,7 +388,7 @@ sign_request_1_3_sha256_test() ->
            end,
 
     Sig = chef_authn:sign_request({Algorithm, Version}, [
-                                   {private_key, Private_key},
+                                   {private_key, PrivateKey},
                                    {body, ?body},
                                    {user, ?user},
                                    {method, <<"post">>},
@@ -389,49 +406,42 @@ sign_bogus_request_test() ->
                                          <<"1.1">>)).
 
 key_type_cert_test() ->
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
-    ?assertEqual(cert, chef_authn:key_type(Public_key)).
+    ?assertEqual(cert, chef_authn:key_type(example_cert())).
 
 key_type_pk_test() ->
-    {ok, Public_key} = file:read_file(test_dir("platform_public_key_example.pem")),
-    ?assertEqual(key, chef_authn:key_type(Public_key)).
+    ?assertEqual(key, chef_authn:key_type(platform_public_key_example())).
 
 key_type_spki_pk_test() ->
-    {ok, Public_key} = file:read_file(test_dir("spki_public.pem")),
-    ?assertEqual(key, chef_authn:key_type(Public_key)).
+    ?assertEqual(key, chef_authn:key_type(spki_public())).
 
 decrypt_sig_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
     ?assertEqual(?expected_sign_string_v10,
-                 chef_authn:decrypt_sig(AuthSig, Public_key)).
+                 chef_authn:decrypt_sig(AuthSig, example_cert())).
 
 decrypt_sig_v1_1_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_1),
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
-    DecryptSig = chef_authn:decrypt_sig(AuthSig, Public_key),
+    DecryptSig = chef_authn:decrypt_sig(AuthSig, example_cert()),
     ?assertEqual(?expected_sign_string_v11, DecryptSig).
 
 verify_sig_v1_2_test() ->
     Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_2),
     Plain = ?expected_sign_string_v12,
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
     ?assertEqual({name,<<"spec-user">>},
                  chef_authn:verify_sig(Plain, ignore, ignore,
                                        Sig,
                                        list_to_binary(?X_OPS_USERID),
-                                       Public_key,
+                                       example_cert(),
                                        {<<"sha1">>, <<"1.2">>})).
 
 verify_sig_v1_3_sha256_test() ->
     Sig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_3_SHA256),
     Plain = ?expected_sign_string_v13_sha256,
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
     ?assertEqual({name,<<"spec-user">>},
                  chef_authn:verify_sig(Plain, ignore, ignore,
                                        Sig,
                                        list_to_binary(?X_OPS_USERID),
-                                       Public_key,
+                                       example_cert(),
                                        {<<"sha256">>, <<"1.3">>})).
 
 
@@ -478,19 +488,17 @@ verify_sigs_v1_2_test_() ->
 
 decrypt_tagged_sig_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
+    PublicKey = example_cert(),
     ?assertEqual(?expected_sign_string_v10,
-                 chef_authn:decrypt_sig(AuthSig, Public_key)).
+                 chef_authn:decrypt_sig(AuthSig, PublicKey)).
 
 decrypt_sig_fail_platform_style_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
-    {ok, Public_key} = file:read_file(test_dir("platform_public_key_example.pem")),
-    ?assertError(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key})).
+    ?assertError(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, platform_public_key_example()})).
 
 decrypt_sig_fail_spki_test() ->
     AuthSig = iolist_to_binary(?X_OPS_AUTHORIZATION_LINES_V1_0),
-    {ok, Public_key} = file:read_file(test_dir("spki_public.pem")),
-    ?assertError(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, Public_key})).
+    ?assertError(decrypt_failed, chef_authn:decrypt_sig(AuthSig, {key, spki_public()})).
 
 make_skew_time() ->
     % force time skew to allow for now
@@ -501,10 +509,9 @@ make_skew_time() ->
     (NowEpoch - ReqTimeEpoch) + 100.
 
 authenticate_user_request_no_body_test_() ->
-    {ok, RawKey} = file:read_file(test_dir("private_key")),
-    Private_key = chef_authn:extract_private_key(RawKey),
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
-    Headers0 = chef_authn:sign_request(Private_key, ?user, <<"get">>,
+    PrivateKey = chef_authn:extract_private_key(private_key()),
+    PublicKey = example_cert(),
+    Headers0 = chef_authn:sign_request(PrivateKey, ?user, <<"get">>,
                                        now, ?path),
     %% We convert here back into binary keys in headers since that
     %% is what we'd get when parsing the received headers over the wire
@@ -513,7 +520,7 @@ authenticate_user_request_no_body_test_() ->
     % force time skew to allow a request to be processed 'now'
     [fun() ->
              Ok = chef_authn:authenticate_user_request(GetHeader, <<"get">>, ?path, <<>>,
-                                                       Public_key, 600),
+                                                       PublicKey, 600),
               ?assertEqual({name, ?user}, Ok)
      end].
 
@@ -533,11 +540,10 @@ authenticate_user_request_1_0_test_() ->
 %% protocol version. As long as chef_authn:sign_request/8 supports signing, these tests
 %% should work.
 authenticate_user_request_tests_by_version(SignVersion) ->
-    {ok, RawKey} = file:read_file(test_dir("private_key")),
-    Private_key = chef_authn:extract_private_key(RawKey),
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
+    PrivateKey = chef_authn:extract_private_key(private_key()),
+    PublicKey = example_cert(),
     Alg = chef_authn:default_signing_algorithm(SignVersion),
-    Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+    Headers0 = chef_authn:sign_request(PrivateKey, ?body, ?user, <<"post">>,
                                        ?request_time_erlang, ?path, Alg, SignVersion),
     %% We convert here back into binary keys in headers since that
     %% is what we'd get when parsing the received headers over the wire
@@ -550,7 +556,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
      {"authenticated user request",
       fun() ->
               Ok = chef_authn:authenticate_user_request(GetHeader, <<"post">>, ?path, ?body,
-                                                        Public_key, TimeSkew),
+                                                        PublicKey, TimeSkew),
               ?assertEqual({name, ?user}, Ok)
       end
      },
@@ -559,7 +565,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
       fun() ->
               BadPath = chef_authn:authenticate_user_request(GetHeader, <<"post">>,
                                                   <<"/organizations/foo">>,
-                                                  ?body, Public_key, TimeSkew),
+                                                  ?body, PublicKey, TimeSkew),
               ?assertEqual({no_authn, bad_sig}, BadPath)
       end
      },
@@ -567,7 +573,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
      {"no_authn: bad method",
       fun() ->
               BadMethod = chef_authn:authenticate_user_request(GetHeader, <<"PUT">>, ?path,
-                                                    ?body, Public_key, TimeSkew),
+                                                    ?body, PublicKey, TimeSkew),
               ?assertEqual({no_authn, bad_sig}, BadMethod)
       end
      },
@@ -575,7 +581,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
      {"no_authn: bad body",
       fun() ->
               BadBody = chef_authn:authenticate_user_request(GetHeader, <<"post">>, ?path,
-                                                  <<"xyz">>, Public_key, TimeSkew),
+                                                  <<"xyz">>, PublicKey, TimeSkew),
               ?assertEqual({no_authn, bad_sig}, BadBody)
       end
      },
@@ -583,7 +589,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
      {"no_authn: bad time",
       fun() ->
               BadTime = chef_authn:authenticate_user_request(GetHeader, <<"post">>, ?path,
-                                                  ?body, Public_key, 600),
+                                                  ?body, PublicKey, 600),
               ?assertEqual({no_authn, bad_clock}, BadTime)
       end
       },
@@ -596,7 +602,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
                                  GetHeader(H)
                          end,
               BadTime = chef_authn:authenticate_user_request(MyHeader, <<"post">>, ?path,
-                                                             ?body, Public_key, TimeSkew),
+                                                             ?body, PublicKey, TimeSkew),
               ?assertEqual({no_authn,{bad_headers,[<<"X-Ops-Timestamp">>]}},
                             BadTime)
       end
@@ -604,9 +610,9 @@ authenticate_user_request_tests_by_version(SignVersion) ->
 
      {"no_authn: bad key",
       fun() ->
-              {ok, Other_key} = file:read_file(test_dir("other_cert.pem")),
+              OtherKey = other_cert(),
               BadKey = chef_authn:authenticate_user_request(GetHeader, <<"post">>, ?path,
-                                                 ?body, Other_key,
+                                                 ?body, OtherKey,
                                                  TimeSkew),
               ?assertEqual({no_authn, bad_sig}, BadKey)
       end
@@ -618,7 +624,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, {missing_headers, [<<"X-Ops-Timestamp">>]}},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      },
 
@@ -628,7 +634,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, {missing_headers, [<<"X-Ops-UserId">>]}},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      },
 
@@ -641,7 +647,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, bad_sig},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      },
 
@@ -654,7 +660,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, bad_sig},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      },
 
@@ -665,7 +671,7 @@ authenticate_user_request_tests_by_version(SignVersion) ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, bad_sign_desc},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      },
 
@@ -674,16 +680,15 @@ authenticate_user_request_tests_by_version(SignVersion) ->
               Headers2 = lists:keydelete(<<"X-Ops-Sign">>, 1, Headers),
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, {missing_headers, [<<"X-Ops-Sign">>]}},
-                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                      ?body, Public_key, TimeSkew))
+                           chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
+                                                     ?body, PublicKey, TimeSkew))
       end
      }
     ].
 
 validate_headers_test_() ->
-    {ok, RawKey} = file:read_file(test_dir("private_key")),
-    Private_key = chef_authn:extract_private_key(RawKey),
-    Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+    PrivateKey = chef_authn:extract_private_key(private_key()),
+    Headers0 = chef_authn:sign_request(PrivateKey, ?body, ?user, <<"post">>,
                                        calendar:universal_time(), ?path),
     %% We convert here back into binary keys in headers since that
     %% is what we'd get when parsing the received headers over the wire
@@ -702,14 +707,13 @@ validate_headers_test_() ->
         ++ MissingOneTests.
 
 bad_signing_protocol_test() ->
-    {ok, RawKey} = file:read_file(test_dir("private_key")),
-    Private_key = chef_authn:extract_private_key(RawKey),
-    {ok, Public_key} = file:read_file(test_dir("example_cert.pem")),
+    PrivateKey = chef_authn:extract_private_key(private_key()),
+    PublicKey = example_cert(),
     Alg = chef_authn:default_signing_algorithm(),
 
     %% v1.0 is chosen here just to make the request. We're going to replace
     %% it with other things.
-    Headers0 = chef_authn:sign_request(Private_key, ?body, ?user, <<"post">>,
+    Headers0 = chef_authn:sign_request(PrivateKey, ?body, ?user, <<"post">>,
                                        ?request_time_erlang, ?path, Alg, ?SIGNING_VERSION_V1_0),
     %% We convert here back into binary keys in headers since that
     %% is what we'd get when parsing the received headers over the wire
@@ -725,7 +729,7 @@ bad_signing_protocol_test() ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, bad_sign_desc},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      },
      {"no_authn: incorrect algorithm for v1.1",
@@ -735,7 +739,7 @@ bad_signing_protocol_test() ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, bad_sign_desc},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      },
      {"no_authn: incorrect algorithm for v1.2",
@@ -745,7 +749,7 @@ bad_signing_protocol_test() ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, bad_sign_desc},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      },
      {"no_authn: incorrect algorithm for v1.3",
@@ -755,7 +759,7 @@ bad_signing_protocol_test() ->
               GetHeader2 = fun(X) -> proplists:get_value(X, Headers2) end,
               ?assertEqual({no_authn, bad_sign_desc},
                            chef_authn:authenticate_user_request(GetHeader2, <<"post">>, ?path,
-                                                     ?body, Public_key, TimeSkew))
+                                                     ?body, PublicKey, TimeSkew))
       end
      }
     ].
@@ -775,57 +779,49 @@ parse_signing_description_1_1_test_() ->
       || {In, Want} <- Cases ].
 
 decode_cert_test() ->
-    {ok, Bin} = file:read_file(test_dir("example_cert.pem")),
-    Cert = chef_authn:decode_cert(Bin),
+    Cert = chef_authn:decode_cert(example_cert()),
     ?assertEqual('RSAPublicKey', erlang:element(1, Cert)).
 
 decode_public_key_platform_test() ->
     %% platform-style key
-    {ok, Bin} = file:read_file(test_dir("platform_public_key_example.pem")),
-    PubKey = chef_authn:decode_public_key(Bin),
+    PubKey = chef_authn:decode_public_key(platform_public_key_example()),
     Coded = public_key:encrypt_public(<<"open sesame">>, PubKey),
     ?assertEqual(true, is_binary(Coded)).
 
 decode_public_key_spki_test() ->
+    %% verify valid key, by encrypting something, will error if key is bad.
     %% platform-style key
-    {ok, Bin} = file:read_file(test_dir("spki_public.pem")),
-    %% verify valid key, by encrypting something, will error if
-    %% key is bad.
-    PubKey = chef_authn:decode_public_key(Bin),
+    PubKey = chef_authn:decode_public_key(spki_public()),
     Coded = public_key:encrypt_public(<<"open sesame">>, PubKey),
     ?assertEqual(true, is_binary(Coded)).
 
 extract_pem_encoded_public_key_test_() ->
     [{"CERTIFICATE",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("example_cert.pem")),
-              Key = chef_authn:extract_pem_encoded_public_key(Pem),
+              Key = chef_authn:extract_pem_encoded_public_key(example_cert()),
               ?assertMatch(<<"-----BEGIN PUBLIC KEY",_Bin/binary>>, Key)
       end},
      {"PUBLIC KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("spki_public.pem")),
-              Key = chef_authn:extract_pem_encoded_public_key(Pem),
+              Key = chef_authn:extract_pem_encoded_public_key(spki_public()),
               ?assertEqual({error, bad_key}, Key)
       end},
      {"RSA PUBLIC KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("webui_pub.pem")),
-              Key = chef_authn:extract_pem_encoded_public_key(Pem),
+              Key = chef_authn:extract_pem_encoded_public_key(webui_pub()),
               ?assertEqual({error, bad_key}, Key)
       end},
      {"RSA PRIVATE KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("private_key")),
-              Key = chef_authn:extract_pem_encoded_public_key(Pem),
+              Key = chef_authn:extract_pem_encoded_public_key(private_key()),
               ?assertEqual({error, bad_key}, Key)
       end},
      {"invalid cert returns error tuple", generator,
       fun() ->
 
-              {ok, Pem} = file:read_file(test_dir("example_cert.pem")),
+              Pem = example_cert(),
               Pem2 = re:replace(Pem, "D", "0", [{return, binary}]),
-              {ok, Priv} = file:read_file(test_dir("private_key")),
+              Priv = private_key(),
               BadKeys = [Priv, Pem2, <<"">>, <<"abc">>,
                          term_to_binary([123, {x, x}])],
               [ ?_assertEqual({error, bad_key},
@@ -837,54 +833,47 @@ extract_pem_encoded_public_key_test_() ->
     ].
 
 
-
 extract_public_or_private_key_test_() ->
     [{"RSA PUBLIC KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("webui_pub.pem")),
-              Key = chef_authn:extract_public_or_private_key(Pem),
-              ?assert(Key#'RSAPublicKey'.modulus > 0)
+              Key = chef_authn:extract_public_or_private_key(webui_pub()),
+              ?assertPublicKey(Key)
       end},
 
      {"PUBLIC KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("spki_public.pem")),
-              Key = chef_authn:extract_public_or_private_key(Pem),
-              ?assert(Key#'RSAPublicKey'.modulus > 0)
+              Key = chef_authn:extract_public_or_private_key(spki_public()),
+              ?assertPublicKey(Key)
       end},
 
      {"CERTIFICATE",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("example_cert.pem")),
-              Key = chef_authn:extract_public_or_private_key(Pem),
-              ?assert(Key#'RSAPublicKey'.modulus > 0)
+              Key = chef_authn:extract_public_or_private_key(example_cert()),
+              ?assertPublicKey(Key)
       end},
 
      {"RSA PRIVATE KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("private_key")),
-              Key = chef_authn:extract_public_or_private_key(Pem),
-              ?assert(Key#'RSAPrivateKey'.prime1 > 0)
+              Key = chef_authn:extract_public_or_private_key(private_key()),
+              ?assertPrivateKey(Key)
       end},
 
      {"RSA PRIVATE KEY PKCS#8",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("private_key_pkcs8")),
-              Key = chef_authn:extract_public_or_private_key(Pem),
-              ?assert(Key#'RSAPrivateKey'.prime1 > 0)
+              Key = chef_authn:extract_public_or_private_key(private_key_pkcs8()),
+              ?assertPrivateKey(Key)
       end},
 
      {"UNSUPPORTED DSA PRIVATE KEY PKCS#8",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("private_key_pkcs8_dsa")),
-              Key = chef_authn:extract_public_or_private_key(Pem),
-              ?_assertEqual({error, bad_key}, Key)
+              Key = chef_authn:extract_public_or_private_key(private_key_pkcs8_dsa()),
+              ?assertEqual({error, bad_key}, Key)
       end},
 
      {"invalid keys return error tuple", generator,
       fun() ->
               %% mangle a key
-              {ok, Pem} = file:read_file(test_dir("spki_public.pem")),
+              Pem = spki_public(),
               Pem2 = re:replace(Pem, "A", "0", [{return, binary}]),
               BadKeys = [Pem2, <<"">>, <<"abc">>,
                          term_to_binary([123, {x, x}])],
@@ -897,38 +886,34 @@ extract_public_or_private_key_test_() ->
 extract_public_key_test_() ->
     [{"RSA PUBLIC KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("webui_pub.pem")),
-              Key = chef_authn:extract_public_key(Pem),
-              ?assert(Key#'RSAPublicKey'.modulus > 0)
+              Key = chef_authn:extract_public_key(webui_pub()),
+              ?assertPublicKey(Key)
       end},
 
      {"PUBLIC KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("spki_public.pem")),
-              Key = chef_authn:extract_public_key(Pem),
-              ?assert(Key#'RSAPublicKey'.modulus > 0)
+              Key = chef_authn:extract_public_key(spki_public()),
+              ?assertPublicKey(Key)
       end},
 
      {"CERTIFICATE",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("example_cert.pem")),
-              Key = chef_authn:extract_public_key(Pem),
-              ?assert(Key#'RSAPublicKey'.modulus > 0)
+              Key = chef_authn:extract_public_key(example_cert()),
+              ?assertPublicKey(Key)
       end},
 
      {"RSA PRIVATE KEY is",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("private_key")),
-              Key = chef_authn:extract_public_or_private_key(Pem),
-              ?assert(Key#'RSAPrivateKey'.prime1 > 0)
+              Key = chef_authn:extract_public_or_private_key(private_key()),
+              ?assertPrivateKey(Key)
       end},
 
      {"invalid keys return error tuple", generator,
       fun() ->
               %% mangle a key
-              {ok, Pem} = file:read_file(test_dir("spki_public.pem")),
+              Pem = spki_public(),
               Pem2 = re:replace(Pem, "A", "0", [{return, binary}]),
-              {ok, Priv} = file:read_file(test_dir("private_key")),
+              Priv = private_key(),
               BadKeys = [Priv, Pem2, <<"">>, <<"abc">>,
                          term_to_binary([123, {x, x}])],
               [ ?_assertEqual({error, bad_key},
@@ -940,19 +925,18 @@ extract_public_key_test_() ->
 extract_private_key_test_() ->
     [{"RSA PRIVATE KEY",
       fun() ->
-              {ok, Pem} = file:read_file(test_dir("private_key")),
-              Key = chef_authn:extract_private_key(Pem),
-              ?assert(Key#'RSAPrivateKey'.prime1 > 0)
+              Key = chef_authn:extract_private_key(private_key()),
+              ?assertPrivateKey(Key)
       end},
 
      {"invalid keys return error tuple", generator,
       fun() ->
               %% mangle a key
-              {ok, Pem} = file:read_file(test_dir("spki_public.pem")),
+              Pem = spki_public(),
               Munged = re:replace(Pem, "A", "0", [{return, binary}]),
-              {ok, Cert} = file:read_file(test_dir("example_cert.pem")),
-              {ok, Pub1} = file:read_file(test_dir("webui_pub.pem")),
-              {ok, Pub2} = file:read_file(test_dir("spki_public.pem")),
+              Cert = example_cert(),
+              Pub1 = webui_pub(),
+              Pub2 = spki_public(),
               BadKeys = [Munged, Cert, Pub1, Pub2,
                          <<"">>, <<"abc">>,
                          term_to_binary([123, {x, x}])],
@@ -965,9 +949,6 @@ extract_private_key_test_() ->
 hash_file_test() ->
     {ok, Fd} = file:open(test_dir("example_cert.pem"), [read]),
     FileHash = chef_authn:hash_file(Fd),
-    {ok, Bin} = file:read_file(test_dir("example_cert.pem")),
-    ContentHash = chef_authn:hash_string(Bin),
+    ContentHash = chef_authn:hash_string(example_cert()),
     ?assert(is_binary(FileHash)),
     ?assertEqual(ContentHash, FileHash).
-
-
