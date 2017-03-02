@@ -28,21 +28,29 @@ test_dir(File) ->
 test_dir() ->
     filename:join(code:priv_dir(chef_authn), "../test").
 
+private_key() ->
+    content(test_dir("testkey.pem")).
+
+webui_pub() ->
+    content(test_dir("webui_pub.pem")).
+
+content(Path) ->
+    {ok, Key} = file:read_file(Path),
+    Key.
+
 unset_chef_authn_env() ->
     application:unset_env(chef_authn, keyring),
     application:unset_env(chef_authn, keyring_file),
     application:unset_env(chef_authn, secrets_module),
     application:unset_env(chef_authn, keyring_dir).
 
-assert_public_key(#'RSAPublicKey'{} = Key) ->
-    ?assert(Key#'RSAPublicKey'.modulus > 0);
-assert_public_key(BadKey) ->
-    error({{expected, 'RSAPublicKey'}, {got, BadKey}}).
+-define(assert_public_key(Key),
+    ?assertMatch(#'RSAPublicKey'{}, Key),
+    ?assert(Key#'RSAPublicKey'.modulus > 0)).
 
-assert_private_key(#'RSAPrivateKey'{} = Key) ->
-    ?assert(Key#'RSAPrivateKey'.prime1 > 0);
-assert_private_key(BadKey) ->
-    error({{expected, 'RSAPrivateKey'}, {got, BadKey}}).
+-define(assert_private_key(Key),
+    ?assertMatch(#'RSAPrivateKey'{}, Key),
+    ?assert(Key#'RSAPrivateKey'.prime1 > 0)).
 
 lookup_test_() ->
     {foreach,
@@ -57,19 +65,19 @@ lookup_test_() ->
      [{"private key fetch",
        fun() ->
                {ok, Key} = chef_keyring:get_key(testkey),
-               assert_private_key(Key)
+               ?assert_private_key(Key)
        end},
 
       {"public key fetch",
        fun() ->
                {ok, Key} = chef_keyring:get_key(webui_pub),
-               assert_public_key(Key)
+               ?assert_public_key(Key)
        end},
 
       {"public key in certificate fetch",
        fun() ->
                {ok, Key} = chef_keyring:get_key(example_cert),
-               assert_public_key(Key)
+               ?assert_public_key(Key)
        end},
 
       {"fetching unknown key returns error tuple",
@@ -105,27 +113,23 @@ load_file_test_() ->
       {"Test basic key file reading",
        fun() ->
                {ok, Key1} = chef_keyring:get_key('clownco-org-admin'),
-               ?assertEqual(element(1,Key1), 'RSAPrivateKey'),
                {ok, Key2} = chef_keyring:get_key('testkey'),
-               ?assertEqual(element(1,Key2), 'RSAPrivateKey')
+               ?assert_private_key(Key1),
+               ?assert_private_key(Key2)
        end},
       {"Test key file reloading",
        fun() ->
                application:set_env(chef_authn, keyring,
                                    [{test1, test_dir("testkey.pem")}]),
-
-               application:set_env(chef_authn, keyring,
-                                   [{test1, test_dir("testkey.pem")}]),
                {ok, Key1} = chef_keyring:get_key(test1),
-               ?assertEqual(element(1,Key1), 'RSAPrivateKey'),
+               ?assert_private_key(Key1),
 
                application:set_env(chef_authn, keyring,
                                    [{test1, test_dir("webui_pub.pem")}]),
-
                chef_keyring:reload(),
 
                {ok, Key2} = chef_keyring:get_key(test1),
-               ?assertEqual(element(1,Key2), 'RSAPublicKey')
+               ?assert_public_key(Key2)
        end}
      ]
     }.
@@ -137,13 +141,12 @@ load_secrets_module_test_() ->
              application:set_env(chef_authn, secrets_module,
                                  {chef_secrets, get,
                                   [{pivotal, [<<"chef-server">>, <<"superuser_key">>]},
-                                   {webui, [<<"chef-server">>, <<"webui_key">>]}]}),
+                                   {webui_pub, [<<"chef-server">>, <<"webui_pub_key">>]}]}),
              error_logger:tty(false),
-             {ok, Pem} = file:read_file(test_dir("private_key")),
              meck:new(chef_secrets, [non_strict]),
              meck:expect(chef_secrets, get,
-                         fun(<<"chef-server">>, <<"superuser_key">>) -> {ok, Pem};
-                            (<<"chef-server">>, <<"webui_key">>) -> {ok, Pem}
+                         fun(<<"chef-server">>, <<"superuser_key">>) -> {ok, private_key()};
+                            (<<"chef-server">>, <<"webui_pub_key">>) -> {ok, private_key()}
                          end),
              chef_keyring:start_link(),
              chef_keyring:reload()
@@ -157,9 +160,9 @@ load_secrets_module_test_() ->
       {"Test basic secrets_module secrets getting",
        fun() ->
                {ok, Key0} = chef_keyring:get_key(pivotal),
-               {ok, Key1} = chef_keyring:get_key(webui),
-               ?assertEqual(element(1,Key0), 'RSAPrivateKey'),
-               ?assertEqual(element(1,Key1), 'RSAPrivateKey')
+               {ok, Key1} = chef_keyring:get_key(webui_pub),
+               ?assert_private_key(Key0),
+               ?assert_private_key(Key1)
        end}
      ]
     }.
@@ -179,7 +182,7 @@ load_dir_test_() ->
       {"Test basic key dir reading",
        fun() ->
                {ok, Key1} = chef_keyring:get_key(testkey),
-               ?assertEqual(element(1,Key1), 'RSAPrivateKey')
+               ?assert_private_key(Key1)
        end}
      ]
     }.
@@ -219,10 +222,10 @@ reload_changed_dir_test_() ->
                timer:sleep(1000), %% I'm ashamed, but directory times are second resolution
                chef_keyring:reload_if_changed(),
                Stats3 = chef_keyring:stats(),
-               ?assert(Stats1 =/= Stats3),
+               ?assertNotEqual(Stats1, Stats3),
 
                {Result3, _} = chef_keyring:get_key('reload_test'),
-               ?assertEqual(Result3, 'ok')
+               ?assertEqual(ok, Result3)
        end}
      ]
     }.

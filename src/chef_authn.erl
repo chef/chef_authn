@@ -84,10 +84,8 @@
                           {path, http_path()} |
                           {get_header, header_fun()}.
 -ifdef(otp_18_plus).
--define(get_key_der(X), X).
 -define(ensure_binary(X), X).
 -else.
--define(get_key_der(X), {0, KeyDerEncoded} = X, KeyDerEncoded).
 -define(ensure_binary(X), erlang:list_to_binary(X)).
 -endif.
 
@@ -162,7 +160,7 @@ process_key({'SubjectPublicKeyInfo', _, _} = PubEntry) ->
 process_key({'RSAPublicKey', Der, _}) ->
     public_key:der_decode('RSAPublicKey', Der);
 process_key({'RSAPrivateKey', Der, _}) ->
-        public_key:der_decode('RSAPrivateKey', Der);
+    public_key:der_decode('RSAPrivateKey', Der);
 process_key({'Certificate', _Der, _} = CertEntry) ->
     %% NOTE: assumes the certificate contains public key info and only extracts that.
     Cert = public_key:pem_entry_decode(CertEntry),
@@ -740,5 +738,8 @@ decode_cert(Bin) ->
     public_key_from_spki(TbsCert#'TBSCertificate'.subjectPublicKeyInfo).
 
 public_key_from_spki(Spki) ->
-    KeyDer = ?get_key_der(Spki#'SubjectPublicKeyInfo'.subjectPublicKey),
+    KeyDer = get_key_der(Spki#'SubjectPublicKeyInfo'.subjectPublicKey),
     public_key:der_decode('RSAPublicKey', KeyDer).
+
+get_key_der({0, Bin}) when is_binary(Bin)-> Bin;
+get_key_der(Bin) when is_binary(Bin)-> Bin.
