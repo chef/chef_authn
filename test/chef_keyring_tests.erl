@@ -146,7 +146,7 @@ load_secrets_module_test_() ->
              meck:new(chef_secrets, [non_strict]),
              meck:expect(chef_secrets, get,
                          fun(<<"chef-server">>, <<"superuser_key">>) -> {ok, private_key()};
-                            (<<"chef-server">>, <<"webui_pub_key">>) -> {ok, private_key()}
+                            (<<"chef-server">>, <<"webui_pub_key">>) -> {ok, webui_pub()}
                          end),
              chef_keyring:start_link(),
              chef_keyring:reload()
@@ -162,7 +162,7 @@ load_secrets_module_test_() ->
                {ok, Key0} = chef_keyring:get_key(pivotal),
                {ok, Key1} = chef_keyring:get_key(webui_pub),
                ?assert_private_key(Key0),
-               ?assert_private_key(Key1)
+               ?assert_public_key(Key1)
        end}
      ]
     }.
