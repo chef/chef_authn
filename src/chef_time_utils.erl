@@ -83,6 +83,4 @@ time_in_bounds(ReqTime, Skew) ->
 time_in_bounds(T1, T2, Skew) when is_integer(Skew) ->
     S1 = calendar:datetime_to_gregorian_seconds(T1),
     S2 = calendar:datetime_to_gregorian_seconds(T2),
-    (S2 - S1) < Skew.
-
-
+    erlang:abs(S2 - S1) < Skew.
