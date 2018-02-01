@@ -66,6 +66,18 @@
 -include("chef_authn.hrl").
 -include("chef_keygen.hrl").
 
+-record(state, {
+          mode : block | {send_to, pid()},
+          config : #keygen_config{}
+         }).
+
+-spec default_config() -> #{}.
+default_config() ->
+    #keygen_config{keysize : envy:get(chef_authn, keygen_size, ?DEFAULT_KEY_SIZE, integer),
+                   timeout : envy:get(chef_authn, keygen_timeout, ?DEFAULT_KEY_TIMEOUT, integer),
+                   ssl_path : chef_keygen_worker_sup:get_openssl()
+                  }.
+
 start_link(Config) ->
     gen_server:start_link(?MODULE, Config, []).
 
