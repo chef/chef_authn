@@ -146,6 +146,9 @@ gather_data(Port, Timeout, Acc) ->
         {Port, {data, {eol, Line}}} ->
             gather_data(Port, Timeout, ["\n", Line | Acc])
     after Timeout ->
+            %% Don't just abandon the process if the process ran too long, clean it up as well.
+            {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+            os:cmd(io_lib:format("kill -9 ~p", [OsPid])),
             keygen_timeout
     end.
 
