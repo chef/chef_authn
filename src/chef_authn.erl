@@ -143,6 +143,7 @@ accepted_signing_protocol(SignAlgorithm, SignVersion) ->
             lists:member(SignAlgorithm, SupportedAlgorithms)
     end.
 
+%% Takes a pem_entry (defined as record in R16, but left undefined in later versions)
 -spec process_key({'RSAPublicKey',  binary(), _} |
                   {'RSAPrivateKey', binary(), _} |
                   {'PrivateKeyInfo', _, _}       |
@@ -161,14 +162,18 @@ process_key({'Certificate', _Der, _} = CertEntry) ->
     Cert = public_key:pem_entry_decode(CertEntry),
     TbsCert = Cert#'Certificate'.tbsCertificate,
     public_key_from_spki(TbsCert#'TBSCertificate'.subjectPublicKeyInfo);
-process_key({'PrivateKeyInfo', _, _} = Entry) ->
+process_key({'PrivateKeyInfo', Der, _} = Entry) ->
     KeyInfo = public_key:pem_entry_decode(Entry),
-    KeyAlgorithmInfo = KeyInfo#'PrivateKeyInfo'.privateKeyAlgorithm,
-    case KeyAlgorithmInfo of
-        #'PrivateKeyInfo_privateKeyAlgorithm'{algorithm=?'rsaEncryption'} ->
-            PrivateKey = KeyInfo#'PrivateKeyInfo'.privateKey,
+    %% Earlier versions of public_key don't fully decode the key, but in R21 it does.
+    %% Arguably this could be done with an ifdef and an erlang version test.
+    case KeyInfo of
+        #'PrivateKeyInfo'{privateKeyAlgorithm=#'PrivateKeyInfo_privateKeyAlgorithm'{algorithm=?'rsaEncryption'}, privateKey=PrivateKey} ->
+            io:format("KeyInfo ~p~nPK ~p~n", [KeyInfo, PrivateKey]),
             public_key:der_decode('RSAPrivateKey', ensure_binary(PrivateKey));
+        #'RSAPrivateKey'{} -> %% OTP-21 decodes fully
+            KeyInfo;
         _ ->
+            io:format("KeyInfo ~p~n", [KeyInfo]),
             {error, bad_key}
     end.
 

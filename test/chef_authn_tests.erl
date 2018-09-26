@@ -11,6 +11,8 @@
 -include_lib("public_key/include/public_key.hrl").
 -include("../src/chef_authn.hrl").
 
+-compile([export_all]).
+
 -define(path, <<"/organizations/clownco">>).
 -define(path_with_query, <<"/organizations/clownco?a=1&b=2">>).
 -define(hashed_path_sha1, <<"YtBWDn1blGGuFIuKksdwXzHU9oE=">>).
