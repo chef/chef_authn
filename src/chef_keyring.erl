@@ -30,7 +30,10 @@
          list_keys/0,
          reload/0,
          reload_if_changed/0,
-         stats/0]).
+         stats/0,
+         blocking_reload/0,
+         drop_key/1,
+         stop/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -84,6 +87,14 @@ reload() ->
 reload_if_changed() ->
     gen_server:cast(?SERVER, reload_if_changed).
 
+blocking_reload() ->
+    gen_server:call(?SERVER, reload, infinity).
+
+drop_key(KeyName) ->
+    gen_server:call(?SERVER, {drop_key, KeyName}, infinity).
+
+stop() ->
+    gen_server:cast(?SERVER, stop).
 
 init([]) ->
     try
@@ -119,6 +130,12 @@ handle_call(stats, _From, State) ->
          {dir_mod_time, State#state.dir_mod_time},
          {last_updated, State#state.last_updated}],
     {reply, Reply, State};
+handle_call(reload, _From, State) ->
+    NewState = load(State),
+     {reply, ok, NewState};
+handle_call({drop_key, KeyName}, _From, #state{keys=Keys}=State) ->
+    Keys1 = dict:erase(KeyName, Keys),
+    {reply, ok, State#state{keys=Keys1} };
 handle_call(_Request, _From, State) ->
     {reply, ignored, State}.
 
@@ -135,6 +152,8 @@ handle_cast(reload_if_changed, #state{dir_mod_time=DirModTime, watch_dir=WatchDi
 handle_cast(reload, State) ->
     NewState = load(State),
     {noreply, NewState};
+handle_cast(stop, State) ->
+    {stop, normal, State};
 handle_cast(_Request, State) ->
     {noreply, State}.
 
@@ -173,6 +192,7 @@ load_keyring_from_callback(PresentKeys) ->
         {M, F, NamedArguments} when is_atom(M) andalso
                                     is_atom(F) andalso
                                     is_list(NamedArguments) ->
+            error_logger:info_msg("Load from callback ~p:~p Args ~p~n", [M, F, NamedArguments]),
             key_from_callback({M, F}, NamedArguments, PresentKeys);
         undefined ->
             PresentKeys;
@@ -186,6 +206,7 @@ key_from_callback(_, [], Dict) ->
 key_from_callback({M, F} = Fun, [{Name, Args}|Tail], Dict) ->
     case erlang:apply(M, F, Args) of
         {ok, Content} ->
+            error_logger:info_msg("Load from callback ~p:~p key: ~p~n", [M, F, Name]),
             Dict1 = dict:store(Name, chef_authn:extract_public_or_private_key(Content), Dict),
             key_from_callback(Fun, Tail, Dict1);
         Error ->

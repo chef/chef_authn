@@ -61,7 +61,9 @@ lookup_test_() ->
              error_logger:tty(false),
              chef_keyring:start_link()
      end,
-     fun(_) -> cleanup end,
+     fun(_) ->
+             chef_keyring:stop()
+     end,
      [{"private key fetch",
        fun() ->
                {ok, Key} = chef_keyring:get_key(testkey),
@@ -99,15 +101,77 @@ lookup_test_() ->
        end}
      ]}.
 
+drop_test_() ->
+    {foreach,
+     fun() ->
+             application:set_env(chef_authn, keyring,
+                                 [{test1, test_dir("testkey.pem")}]),
+             application:set_env(chef_authn, keyring_dir, test_dir()),
+             error_logger:tty(false),
+             chef_keyring:start_link()
+     end,
+     fun(_) ->
+             chef_keyring:stop()
+     end,
+     [{"private key fetch",
+       fun() ->
+               {ok, Key} = chef_keyring:get_key(testkey),
+               ?assert_private_key(Key),
+               chef_keyring:drop_key(testkey),
+               ?assertMatch({error, unknown_key}, chef_keyring:get_key(testkey))
+       end}
+      ]
+    }.
+
+
+
+blocking_reload_test_() ->
+    {setup,
+     fun() ->
+             chef_keyring:stop(),
+             unset_chef_authn_env(),
+             application:set_env(chef_authn, keyring_dir, test_dir()),
+
+             error_logger:tty(false),
+             chef_keyring:start_link()
+     end,
+     fun(_) ->
+             chef_keyring:stop()
+     end,
+     [
+      {"Test key file blocking reloading",
+       fun() ->
+               application:set_env(chef_authn, keyring,
+                                   [{test1, test_dir("testkey.pem")}]),
+               chef_keyring:blocking_reload(),
+               {ok, Key1} = chef_keyring:get_key(test1),
+               ?assert_private_key(Key1),
+
+               application:set_env(chef_authn, keyring,
+                                   [{test1, test_dir("webui_pub.pem")}]),
+               chef_keyring:blocking_reload(),
+
+               {ok, Key2} = chef_keyring:get_key(test1),
+               ?assert_public_key(Key2)
+       end}
+     ]
+    }.
+
+
 
 load_file_test_() ->
     {setup,
      fun() ->
+             chef_keyring:stop(),
+
              unset_chef_authn_env(),
+             application:set_env(chef_authn, keyring_dir, test_dir()),
+
              error_logger:tty(false),
              chef_keyring:start_link()
      end,
-     fun(_) -> ok
+     fun(_) ->
+             chef_keyring:stop()
      end,
      [
       {"Test basic key file reading",
@@ -121,6 +185,7 @@ load_file_test_() ->
        fun() ->
                application:set_env(chef_authn, keyring,
                                    [{test1, test_dir("testkey.pem")}]),
+               chef_keyring:reload(),
                {ok, Key1} = chef_keyring:get_key(test1),
                ?assert_private_key(Key1),
 
