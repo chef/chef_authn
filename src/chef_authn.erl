@@ -667,10 +667,8 @@ verify_sig(Plain, _BodyHash, _ContentHash, AuthSig, UserId, PublicKey,
     {name, UserId}.
 
 -spec decrypt_sig(binary(), public_key_data() | rsa_public_key()) -> binary().
-decrypt_sig(Sig, {'RSAPublicKey', _, _} = PK) ->
-        public_key:decrypt_public(base64:decode(Sig), PK);
 decrypt_sig(Sig, KeyData) ->
-    decrypt_sig(Sig, decode_key_data(KeyData)).
+    public_key:decrypt_public(base64:decode(Sig), decode_key_data(KeyData)).
 
 -spec sig_from_headers(get_header_fun(), non_neg_integer(), [any()]) ->
     binary().
@@ -690,7 +688,7 @@ parse_signing_description(Desc) ->
     [ {Key, Value} ||
         [Key, Value] <- [ re:split(KV, "=") || KV <- re:split(Desc, ";") ] ].
 
--spec decode_key_data(public_key_data()) -> rsa_public_key().
+-spec decode_key_data(public_key_data()|rsa_public_key()) -> rsa_public_key().
 %% Decode a Base64 encoded public key which is either
 %% wrapped in a certificate or a public key which can be in
 %% PKCS1 or SPKI format. The PKCS1 format is deprecated within Chef, but
@@ -698,6 +696,8 @@ parse_signing_description(Desc) ->
 %%
 %% For backwards compatibility we support the key_data to be provided through
 %% the API as a tagged tuple as well as a binary()
+decode_key_data({'RSAPublicKey', _, _} = PK) ->
+    PK;
 decode_key_data({cert, Data}) ->
     decode_cert(Data);
 decode_key_data({key, Data}) ->
