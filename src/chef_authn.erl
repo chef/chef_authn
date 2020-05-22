@@ -168,12 +168,10 @@ process_key({'PrivateKeyInfo', Der, _} = Entry) ->
     %% Arguably this could be done with an ifdef and an erlang version test.
     case KeyInfo of
         #'PrivateKeyInfo'{privateKeyAlgorithm=#'PrivateKeyInfo_privateKeyAlgorithm'{algorithm=?'rsaEncryption'}, privateKey=PrivateKey} ->
-            io:format("KeyInfo ~p~nPK ~p~n", [KeyInfo, PrivateKey]),
             public_key:der_decode('RSAPrivateKey', ensure_binary(PrivateKey));
         #'RSAPrivateKey'{} -> %% OTP-21 decodes fully
             KeyInfo;
         _ ->
-            io:format("KeyInfo ~p~n", [KeyInfo]),
             {error, bad_key}
     end.
 
