@@ -954,3 +954,135 @@ hash_file_test() ->
     ContentHash = chef_authn:hash_string(example_cert()),
     ?assert(is_binary(FileHash)),
     ?assertEqual(ContentHash, FileHash).
+
+%% CHEF-27821: Tests for gateway multi-tenancy header support
+%%
+%% These tests verify that X-Ops-Original-UserId and X-Ops-Original-URL headers
+%% are properly handled for signature verification when a gateway modifies requests.
+%% 
+%% Since chef_authn.erl has -ifdef(TEST). -compile([export_all])., we can directly
+%% test the internal do_authenticate_user_request/6 function.
+
+gateway_headers_both_undefined_uses_standard_headers_test() ->
+    %% Test: When both X-Ops-Original-* headers are undefined, 
+    %% should use X-Ops-UserId and original Path (backward compatibility)
+    PrivateKey = chef_authn:extract_private_key(private_key()),
+    PublicKey = example_cert(),
+    User = <<"testuser">>,
+    Path = <<"/organizations/testorg/nodes">>,
+    Body = <<"{}">>,
+    Method = <<"POST">>,
+    
+    %% Sign request with standard headers (no gateway)
+    Headers0 = chef_authn:sign_request(PrivateKey, Body, User, Method,
+                                       ?request_time_erlang, Path, 
+                                       ?SIGNING_ALGORITHM_SHA256, <<"1.3">>),
+    Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
+    
+    %% GetHeader returns undefined for gateway headers
+    GetHeader = fun(<<"X-Ops-UserId">>) -> proplists:get_value(<<"X-Ops-UserId">>, Headers);
+                   (<<"X-Ops-Original-UserId">>) -> undefined;
+                   (<<"X-Ops-Original-URL">>) -> undefined;
+                   (X) -> proplists:get_value(X, Headers)
+                end,
+    
+    %% Should use standard headers (UserId and Path)
+    TimeSkew = make_skew_time(),
+    Result = chef_authn:do_authenticate_user_request(GetHeader, Method, Path, Body, 
+                                                      PublicKey, TimeSkew),
+    ?assertEqual({name, User}, Result).
+
+gateway_headers_both_defined_uses_original_values_test() ->
+    %% Test: When both X-Ops-Original-* headers are present,
+    %% should use original values for signature verification
+    PrivateKey = chef_authn:extract_private_key(private_key()),
+    PublicKey = example_cert(),
+    OriginalUser = <<"testuser">>,
+    GatewayUser = <<"tenant1_testuser">>,
+    OriginalPath = <<"/organizations/testorg/nodes">>,
+    GatewayPath = <<"/tenant1/organizations/testorg/nodes">>,
+    Body = <<"{}">>,
+    Method = <<"POST">>,
+    
+    %% Sign request with ORIGINAL values (what client used)
+    Headers0 = chef_authn:sign_request(PrivateKey, Body, OriginalUser, Method,
+                                       ?request_time_erlang, OriginalPath,
+                                       ?SIGNING_ALGORITHM_SHA256, <<"1.3">>),
+    Headers1 = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
+    
+    %% Replace X-Ops-UserId with gateway-modified value (simulating gateway behavior)
+    Headers = lists:keyreplace(<<"X-Ops-UserId">>, 1, Headers1, 
+                               {<<"X-Ops-UserId">>, GatewayUser}),
+    
+    %% GetHeader returns gateway values for standard headers, original values for X-Ops-Original-*
+    GetHeader = fun(<<"X-Ops-UserId">>) -> GatewayUser;
+                   (<<"X-Ops-Original-UserId">>) -> OriginalUser;
+                   (<<"X-Ops-Original-URL">>) -> OriginalPath;
+                   (X) -> proplists:get_value(X, Headers)
+                end,
+    
+    %% Should use ORIGINAL headers for signature verification (even though gateway modified them)
+    %% Note: We pass GatewayPath to do_authenticate_user_request, but it should use OriginalPath
+    TimeSkew = make_skew_time(),
+    Result = chef_authn:do_authenticate_user_request(GetHeader, Method, GatewayPath, Body,
+                                                      PublicKey, TimeSkew),
+    %% Signature verification should succeed because it uses original values
+    ?assertEqual({name, OriginalUser}, Result).
+
+gateway_headers_only_userid_defined_fallback_to_standard_test() ->
+    %% Test: When only X-Ops-Original-UserId is present (invalid pairing),
+    %% should fall back to standard headers
+    PrivateKey = chef_authn:extract_private_key(private_key()),
+    PublicKey = example_cert(),
+    User = <<"testuser">>,
+    Path = <<"/organizations/testorg/nodes">>,
+    Body = <<"{}">>,
+    Method = <<"POST">>,
+    
+    %% Sign request with standard values
+    Headers0 = chef_authn:sign_request(PrivateKey, Body, User, Method,
+                                       ?request_time_erlang, Path,
+                                       ?SIGNING_ALGORITHM_SHA256, <<"1.3">>),
+    Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
+    
+    %% GetHeader returns only X-Ops-Original-UserId (invalid pairing - missing URL)
+    GetHeader = fun(<<"X-Ops-UserId">>) -> proplists:get_value(<<"X-Ops-UserId">>, Headers);
+                   (<<"X-Ops-Original-UserId">>) -> <<"originaluser">>;  % Different user
+                   (<<"X-Ops-Original-URL">>) -> undefined;  % Missing!
+                   (X) -> proplists:get_value(X, Headers)
+                end,
+    
+    %% Should fall back to standard headers (UserId and Path) since pairing is invalid
+    TimeSkew = make_skew_time(),
+    Result = chef_authn:do_authenticate_user_request(GetHeader, Method, Path, Body,
+                                                      PublicKey, TimeSkew),
+    ?assertEqual({name, User}, Result).
+
+gateway_headers_only_url_defined_fallback_to_standard_test() ->
+    %% Test: When only X-Ops-Original-URL is present (invalid pairing),
+    %% should fall back to standard headers
+    PrivateKey = chef_authn:extract_private_key(private_key()),
+    PublicKey = example_cert(),
+    User = <<"testuser">>,
+    Path = <<"/organizations/testorg/nodes">>,
+    Body = <<"{}">>,
+    Method = <<"POST">>,
+    
+    %% Sign request with standard values
+    Headers0 = chef_authn:sign_request(PrivateKey, Body, User, Method,
+                                       ?request_time_erlang, Path,
+                                       ?SIGNING_ALGORITHM_SHA256, <<"1.3">>),
+    Headers = [{list_to_binary(K), list_to_binary(V)} || {K, V} <- Headers0],
+    
+    %% GetHeader returns only X-Ops-Original-URL (invalid pairing - missing UserId)
+    GetHeader = fun(<<"X-Ops-UserId">>) -> proplists:get_value(<<"X-Ops-UserId">>, Headers);
+                   (<<"X-Ops-Original-UserId">>) -> undefined;  % Missing!
+                   (<<"X-Ops-Original-URL">>) -> <<"/original/path">>;  % Different path
+                   (X) -> proplists:get_value(X, Headers)
+                end,
+    
+    %% Should fall back to standard headers (UserId and Path) since pairing is invalid
+    TimeSkew = make_skew_time(),
+    Result = chef_authn:do_authenticate_user_request(GetHeader, Method, Path, Body,
+                                                      PublicKey, TimeSkew),
+    ?assertEqual({name, User}, Result).
