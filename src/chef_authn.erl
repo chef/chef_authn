@@ -599,14 +599,35 @@ authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
 do_authenticate_user_request(GetHeader, Method, Path, Body, PublicKey, TimeSkew) ->
     % NOTE: signing description validation and time_skew validation
     % are done in the wrapper function.
-    UserId = GetHeader(<<"X-Ops-UserId">>),
+    
+    % CHEF-27821: Support gateway multi-tenancy headers for signature verification
+    % The gateway may prefix usernames with tenant information (e.g., "tenant1_testuser")
+    % but the client signed the request with the original username ("testuser").
+    % The signature was created using both the original username AND original URL together,
+    % so we must use both original values together or neither (no mixing).
+    OriginalUserId = GetHeader(<<"X-Ops-Original-UserId">>),
+    OriginalURL = GetHeader(<<"X-Ops-Original-URL">>),
+    
+    {UserId, SignaturePath} = case {OriginalUserId, OriginalURL} of
+        {undefined, undefined} ->
+            % No gateway - use current values
+            {GetHeader(<<"X-Ops-UserId">>), Path};
+        {OriginalUid, OriginalUrl} when OriginalUid =/= undefined, OriginalUrl =/= undefined ->
+            % Gateway provided both original headers - use them for signature verification
+            {OriginalUid, OriginalUrl};
+        _ ->
+            % Gateway provided only one original header (invalid) - this will cause signature
+            % verification to fail, which is correct behavior
+            {GetHeader(<<"X-Ops-UserId">>), Path}
+    end,
+    
     ReqTime = GetHeader(<<"X-Ops-Timestamp">>),
     ContentHash = GetHeader(<<"X-Ops-Content-Hash">>),
     AuthSig = sig_from_headers(GetHeader, 1, []),
     [{algorithm, SignAlgorithm}, {version, SignVersion}] =  validate_headers(GetHeader, TimeSkew),
     BodyHash = hashed_body(Body, {SignAlgorithm, SignVersion}),
     Plain = canonicalize_request(BodyHash, UserId, Method, ReqTime,
-                                 Path, SignAlgorithm, SignVersion, GetHeader),
+                                 SignaturePath, SignAlgorithm, SignVersion, GetHeader),
     verify_sig_or_sigs(Plain, BodyHash, ContentHash, AuthSig, UserId, PublicKey, {SignAlgorithm, SignVersion}).
 
 
