@@ -8,7 +8,7 @@
 %% It can be used to sign HTTP requests to send to a Chef server or to
 %% validate such requests (for server implementation).
 %%
-%% Copyright 2011-2012 Opscode, Inc. All Rights Reserved.
+%% Copyright (c) 2012-2025 Progress Software Corporation and/or its subsidiaries or affiliates. All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file

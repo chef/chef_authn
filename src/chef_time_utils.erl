@@ -2,7 +2,7 @@
 %% ex: ts=4 sw=4 et
 %% @author Seth Falcon <seth@opscode.com>
 %% @author Christopher Brown <cb@opscode.com>
-%% @copyright 2011-2012 Opscode, Inc. All Rights Reserved.
+%% @Copyright (c) 2012-2025 Progress Software Corporation and/or its subsidiaries or affiliates. All Rights Reserved.
 %% @doc chef_time_utils - helpers for converting between http and erlang time
 %%
 %% This file is provided to you under the Apache License,

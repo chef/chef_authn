@@ -7,7 +7,7 @@
 
 chef_time_utils - helpers for converting between http and erlang time.
 
-Copyright (c) 2011-2012 Opscode, Inc. All Rights Reserved.
+Copyright (c) 2012-2025 Progress Software Corporation and/or its subsidiaries or affiliates. All Rights Reserved.
 
 __Authors:__ Seth Falcon ([`seth@opscode.com`](mailto:seth@opscode.com)), Christopher Brown ([`cb@opscode.com`](mailto:cb@opscode.com)).
 
