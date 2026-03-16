@@ -22,7 +22,6 @@ type-checking. You can run both locally with:
 
 ## License
 
-- Copyright:: 2011-2017 Chef Software, Inc.
 - License:: Apache License, Version 2.0
 
 ```text
@@ -38,3 +37,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
+
+# Copyright
+
+See [COPYRIGHT.md](./COPYRIGHT.md).
